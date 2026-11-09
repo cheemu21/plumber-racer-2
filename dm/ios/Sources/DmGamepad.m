@@ -178,6 +178,7 @@ static void pads_start(void);   // Physical controllers, below
     BOOL _full, _tap;                              // the 3D layout / the Tap layout is current
     CALayer *_controls;                            // holds every control layer: hidden while a physical controller is connected (the view itself stays, for game touches)
     BOOL _padOff;                                  // a physical controller is connected: every touch goes to the game
+    BOOL _kartTouch;                               // pad_style kart with DM_KART_TOUCH=1 (the launcher's Touch on menus): touches no control takes go to the game's touch screen after all
     UITouch *_game[16];                            // touches on the game's touch screen by finger slot
     CAShapeLayer *_worldIcon[2];   // pad_style kartworld: the rewind and map icons
     CAShapeLayer *_drift, *_driftIcon, *_groove[2], *_backIcon, *_mush[3];   // pad_style kart: the drift key and its tire marks, the pedals' grip grooves (gas, brake), look back's mirror, the knob's spots, stem and eyes
@@ -247,6 +248,9 @@ static BOOL keyHidden(int b, BOOL full) {   // the mobile style has no L3 / R3; 
 - (instancetype)initWithFrame:(CGRect)f {
     if ((self = [super initWithFrame:f])) {
         self.multipleTouchEnabled = YES; self.opaque = NO; self.backgroundColor = UIColor.clearColor;
+        // The kart style keeps the touch screen from the game by default (Mario Kart opens menus on a tap, and a touch that misses a pedal would). DM_KART_TOUCH=1, the launcher's
+        // Touch on menus, gives the game the touches no control takes, for its menus; the player accepts that a stray tap in a race may open one
+        const char *kt = getenv("DM_KART_TOUCH"); _kartTouch = g_kart && kt && atoi(kt);
         const char *feedback = getenv("DM_TOUCH_HAPTICS");
         if (!feedback || atoi(feedback)) {
             _touchFeedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
@@ -482,7 +486,7 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
 - (void)touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e {
     BOOL game = NO;
     for (UITouch *t in ts) {
-        if (_padOff) { if (!g_kart) game |= [self gameBegin:t]; continue; }   // the kart style never gives the game the touch screen (Mario Kart opens menus on a tap)
+        if (_padOff) { if (!g_kart || _kartTouch) game |= [self gameBegin:t]; continue; }   // the kart style gives the game the touch screen only with Touch on menus (Mario Kart opens menus on a tap)
         CGPoint p = [t locationInView:self]; int hit = _tap ? -1 : [self btnAt:p];
         if (hit >= 0) { [_owner setObject:@(C_BTN | (uint64_t)hit << 8) forKey:t]; continue; }
         if ([self inSwap:p]) { [_owner setObject:@(C_SWAP) forKey:t]; continue; }
@@ -500,7 +504,7 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
         if (kind == C_FACE) { [_owner setObject:@(C_FACE) forKey:t]; [_faceOf setObject:@(g_kart ? [self kartFaceAt:p grab:1.25] : [self faceAt:p]) forKey:t]; }
         else if (kind == C_DPAD) [_owner setObject:@(C_DPAD) forKey:t];
         else if (kind == C_STICK) { [_owner setObject:@(C_STICK | (uint64_t)idx << 8) forKey:t]; _stick[idx] = t; _stickNow[idx] = p; }
-        else if (!g_kart) game |= [self gameBegin:t];   // the kart style: a touch on no control does nothing
+        else if (!g_kart || _kartTouch) game |= [self gameBegin:t];   // the kart style: a touch on no control does nothing, unless Touch on menus is on
     }
     if (game) [self pushGame];
     [self recompute];

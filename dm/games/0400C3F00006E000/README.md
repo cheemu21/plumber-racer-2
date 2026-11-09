@@ -43,7 +43,7 @@ Tested only on an iPhone 18 Pro (A20 Pro) in LiveContainer. The app needs the in
 
 ## Controls
 
-A touch layout for racing (`pad_style kartworld`): a floating steering stick, gas and brake pedals, drift (A + R), item (A + L), look back (X), rewind (D-pad down), the map (Y), and + / −. Sliding between gas, drift and item keeps A held. Charge jumps and tricks are on drift. Quick spins are gas and brake together. The camera (right stick) has no touch control; a connected controller is not tested.
+A touch layout for racing (`pad_style kartworld`): a floating steering stick, gas and brake pedals, drift (A + R), item (A + L), look back (X), rewind (D-pad down), the map (Y), and + / −. Sliding between gas, drift and item keeps A held. Charge jumps and tricks are on drift. Quick spins are gas and brake together. The camera (right stick) has no touch control; a connected controller is not tested. The kart layout keeps the touch screen from the game, since the game opens menus on a tap; the launcher's **Touch on menus** (`DM_KART_TOUCH=1`) gives it the touches no control takes, for menus by touch. The phone's gyro drives the game's motion controls when no controller supplies one (turn them on in the game's settings).
 
 ## Status
 
