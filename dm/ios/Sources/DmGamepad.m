@@ -88,9 +88,9 @@ static void motion_start(void) {
 // Duo's inner display, whose picture is a quarter turn from it (up / down and left / right swapped, GitHub issue #569). Open: while the scene is not full screen (Split View on the
 // inner display) Core Motion falls back to the hardware frame without saying so, and the samples are then taken as the view's frame
 static _Atomic int g_iface_orient = 3;      // UIInterfaceOrientation, updated on layout
-static _Atomic int g_pad_shown = 1;         // the kart controls are on screen (a race): the forward flick presses L only then
+static _Atomic int g_pad_shown = 1;         // the kart controls are on screen (a race): the flicks act only then
 static float g_motion_gain = 1.0f;         // DM_MOTION_GAIN (the launcher's Tilt sensitivity, 0.5 to 2.0): how far the phone's tilt and turn rates reach the game's motion sensor
-static BOOL g_flick_item;                  // DM_FLICK_ITEM (the launcher's Flick for an item, kart style): a sharp forward flick of the phone presses L, Mario Kart's item button
+static BOOL g_flick_item;                  // DM_FLICK_ITEM (the launcher's Flick for an item, kart style): a sharp forward flick of the phone presses L, Mario Kart's item button; a backward flick adds stick-down to throw it behind
 static BOOL g_motion_body;                  // samples in the body's frame (iOS 27+)
 static void phone_motion_start(UIView *body) {
     const char *e = getenv("DM_MOTION");
