@@ -222,7 +222,7 @@ HLE_FORCE("_ZN2nn10streamplay18GetGuestJcmsStatesEPNS0_14GuestJcmsStateEiRKNS0_1
           int, h_stpl_JcmsStates, void *out, int n, const void *h) { (void)out; (void)n; (void)h; return 0; }
 
 // ---------- Switch 2 system APIs (SDK 21 Ounce builds, Mario Kart World) ----------
-// Graphics scale (oe): the SDK maps the system's 10 / 20 / 30 to 0 / 1 / 2 (sdk+0x58fd40). The host reports 0, the smallest scale: the cheapest to render
+// oe: the system's screenshot content markers have no system capture behind them here (the graphics scale itself is answered by h_oe_GfxScale in hle_oe.c)
 HLE_FORCE("_ZN2nn2oe32BeginPresentPhotographedContentsEv", "screenshot content marker: no system capture on the host", void, h_oe_PhotoBegin, void) {}
 HLE_FORCE("_ZN2nn2oe30EndPresentPhotographedContentsEv", "screenshot content marker: no system capture on the host", void, h_oe_PhotoEnd, void) {}
 // gs: the graphics system. CheckGraphicsSystemInitialized aborts unless the SDK's own graphics init set its flag (sdk+0x46e898), which the host's nv:: takeover does not run
