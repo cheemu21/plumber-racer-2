@@ -2485,7 +2485,14 @@ HLE_FORCE("_Z22nvnNativeImageFinalizeP14NVNnativeImage", "native images are the 
 }
 HLE_FORCE("_Z35nvnTextureInitializeFromNativeImageP10NVNtextureP14NVNnativeImage", "a linear texture over the picture's memory", NVNboolean, h_ni_texture, NVNtexture *t, native_image_t *i) {
     uint8_t *mem; uint64_t size; uint32_t w, h, stride;
-    if (!dm_native_image(i->handle, &mem, &size, &w, &h, &stride)) { LOG("[RED] nvnTextureInitializeFromNativeImage: handle %#x names no picture", i->handle); return 0; }
+    if (!dm_native_image(i->handle, &mem, &size, &w, &h, &stride)) {
+        // Camera / GameChat images (Mario Kart World 1.8.0 makes three textures from them at boot and aborts if one fails, main+0xd32438): the host has none, so an empty 16x16
+        // RGBA8 texture of its own, never written (sampling gives black). From the Thijs2004/nxnative-mkw port
+        static int nr; if (nr++ < 4) LOG("nvnTextureInitializeFromNativeImage: handle %#x names no picture: an empty 16x16 texture", i->handle);
+        NVNtextureBuilder tb; h_nvnTextureBuilderSetDefaults(&tb); h_nvnTextureBuilderSetDevice(&tb, i->dev);
+        h_nvnTextureBuilderSetTarget(&tb, NVN_TEXTURE_TARGET_2D); h_nvnTextureBuilderSetFormat(&tb, NVN_FORMAT_RGBA8); h_nvnTextureBuilderSetSize2D(&tb, 16, 16);
+        return h_nvnTextureInitialize(t, &tb);
+    }
     if (!i->has_pool) {
         NVNmemoryPoolBuilder pb; h_nvnMemoryPoolBuilderSetDefaults(&pb); h_nvnMemoryPoolBuilderSetDevice(&pb, i->dev); h_nvnMemoryPoolBuilderSetStorage(&pb, mem, size);
         h_nvnMemoryPoolBuilderSetFlags(&pb, NVN_MEMORY_POOL_FLAGS_CPU_UNCACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED);

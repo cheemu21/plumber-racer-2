@@ -20,8 +20,10 @@ package	v0
 shader_versions	v0
 
 # ---- Files ----
-modules	main subsdk0 sdk
-romfs_marker	System/Resource/ResourceSizeTable.Product.100.Nin_Ounce_NVN2.rsizetable.zs
+# 1.8.0 (v917504) adds subsdk1; a version packed from this profile is derived with its own shader tables (build_ipa_from_nsp.py derive_profile), so only the base game is registered
+modules	main subsdk0 subsdk1 sdk
+# a file of both the base game and 1.8.0 (the Product.100 table is the base game's alone: 1.8.0 has Product.180)
+romfs_marker	Movie/StaffRoll_00.webm
 zip_store	.zs:.bwav:.webm:.metallib
 
 # ---- Memory ----
