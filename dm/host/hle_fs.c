@@ -129,7 +129,6 @@ static int dm_fs_test_fail(const char *pt) {
 }
 static int in_txn_dir(const char *hp) { return save_txn_from_path(hp); }
 static int rm_tree(const char *p);
-// Reads and checks a RomFS image's header and index; NULL (and a red line) when it is not a complete image
 // The on-screen controls' hint from the files the game opens (dm_pad_hint, front.h; DmGamepad.m): a path holding one of the profile's pad_show_files substrings marks play (1: Mario Kart World's
 // RaceInfo and minimap layouts), one of pad_hide_files a menu (2: its Title, GameMenu, select and Result layouts); the last match wins, 0 before any. A draw count cannot tell them apart there,
 // since its main menu draws a whole world behind its panels
@@ -148,6 +147,7 @@ static void pad_hint_path(const char *path) {
     else if (DM_GAME_PAD_HIDE_FILES[0] && path_has_any(path, DM_GAME_PAD_HIDE_FILES)) atomic_store(&g_pad_hint, 2);
 }
 
+// Reads and checks a RomFS image's header and index; NULL (and a red line) when it is not a complete image
 static romfs_img *img_open(const char *path) {
     romfs_img *m = romfs_image_open(path);
     if (m) LOG("fs RomFS image %s: %llu entries", path, (unsigned long long)m->n);

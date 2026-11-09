@@ -1132,12 +1132,12 @@ NVN(nvnCommandBufferSetPolygonOffsetClamp, void, NVNcommandBuffer *c, float fa, 
 NVN(nvnCommandBufferDrawArrays, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, int first, int n) { rec_draw(c, (p_draw){pr, first, n, 1, 0, 0}); }
 // Indirect: the {count, instances, first, base instance} record at ind is usually written by the GPU earlier in the frame (Hyrule Warriors: Age of Calamity's first battle), so the replay
 // issues a Metal indirect draw from the pool buffer instead of reading it at record or replay time (nvn_mtl.m draw)
-// NVN2 mesh draw: count task (or, with no task stage, mesh) workgroups from first, recorded as a draw of the replay's own primitive (nvn_obj.h NVN_PRIM_MESH), so the pass
-// planning sees a draw that needs the pass's depth and colour like any other. Mario Kart World's race pass draws with it
 // The draws of the last presented frame, for a front end that tells the game's world from its menus by it (DmGamepad.m: Mario Kart World's kart controls hide in menus, where the game
 // draws about 150 to 300 a frame on the iPhone, and show while it draws its world, 1,200 and more)
 static _Atomic uint32_t g_world_draws;
 uint32_t dm_world_draws(void) { return atomic_load(&g_world_draws); }
+// NVN2 mesh draw: count task (or, with no task stage, mesh) workgroups from first, recorded as a draw of the replay's own primitive (nvn_obj.h NVN_PRIM_MESH), so the pass
+// planning sees a draw that needs the pass's depth and colour like any other. Mario Kart World's race pass draws with it
 NVN_NOPROTO(nvnCommandBufferDrawMeshTasks, void, NVNcommandBuffer *c, int first, int n) { if (n > 0) rec_draw(c, (p_draw){NVN_PRIM_MESH, first, n, 1, 0, 0}); }
 NVN(nvnCommandBufferDrawArraysIndirect, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, NVNbufferAddress ind) { rec_draw(c, (p_draw){pr, 0, 0, 1, 0, ind}); }
 NVN(nvnCommandBufferDrawElementsInstanced, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, NVNindexType it, int n, NVNbufferAddress ib,

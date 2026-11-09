@@ -30,7 +30,7 @@
 #include <stdatomic.h>
 
 enum { B_A = 0, B_B, B_X, B_Y, B_LS, B_RS, B_L, B_R, B_ZL, B_ZR, B_PLUS, B_MINUS, B_LEFT, B_UP, B_RIGHT, B_DOWN, B_N };
-enum { C_NONE = 0, C_STICK, C_DPAD, C_FACE, C_BTN, C_SWAP, C_GAME, C_EMPTY, C_GESTURE };   // which control a touch holds; C_GAME: none, the touch goes to the game's touch screen (finger slot << 8); C_EMPTY: none, kept (the kart style's two-finger tap)
+enum { C_NONE = 0, C_STICK, C_DPAD, C_FACE, C_BTN, C_SWAP, C_GAME, C_EMPTY, C_GESTURE };   // which control a touch holds; C_GAME: none, the touch goes to the game's touch screen (finger slot << 8); C_EMPTY: none, kept (the kart style's two-finger tap); C_GESTURE: none while the kart controls are hidden (a tap, swipe or long press standing in for a button)
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_touch_btn, g_shake_btn;
@@ -70,6 +70,11 @@ static void motion_start(void) {
     }];
 }
 
+@interface DmGamepad : UIView
+- (void)pulse:(uint64_t)mask ms:(int)ms;   // buttons held for a moment by a gesture (the phone's forward flick presses L from the motion handler)
+- (void)pulse:(uint64_t)mask ly:(int32_t)ly ms:(int)ms;   // the same with the left stick held at ly (a backward flick: the item thrown backwards is down + L)
+@end
+
 // ---- The phone's gyro ----
 // A controller mounted on the phone (Backbone One, Razer Kishi, GameSir G8) has no motion sensors of its own: the phone in the middle is the console, as a Switch in handheld.
 // So the phone's device motion (gyro + accelerometer, CoreMotion's fused gravity and user acceleration, 100 Hz, no permission prompt) drives player 1's six-axis sensor, turned
@@ -83,6 +88,9 @@ static void motion_start(void) {
 // Duo's inner display, whose picture is a quarter turn from it (up / down and left / right swapped, GitHub issue #569). Open: while the scene is not full screen (Split View on the
 // inner display) Core Motion falls back to the hardware frame without saying so, and the samples are then taken as the view's frame
 static _Atomic int g_iface_orient = 3;      // UIInterfaceOrientation, updated on layout
+static _Atomic int g_pad_shown = 1;         // the kart controls are on screen (a race): the forward flick presses L only then
+static float g_motion_gain = 1.0f;         // DM_MOTION_GAIN (the launcher's Tilt sensitivity, 0.5 to 2.0): how far the phone's tilt and turn rates reach the game's motion sensor
+static BOOL g_flick_item;                  // DM_FLICK_ITEM (the launcher's Flick for an item, kart style): a sharp forward flick of the phone presses L, Mario Kart's item button
 static BOOL g_motion_body;                  // samples in the body's frame (iOS 27+)
 static void phone_motion_start(UIView *body) {
     const char *e = getenv("DM_MOTION");
@@ -91,6 +99,11 @@ static void phone_motion_start(UIView *body) {
     if (!mode) { LOG("front end: the phone's gyro is off (DM_PHONE_MOTION=0)"); return; }
     if (!g_motion.deviceMotionAvailable) { LOG("front end: no device motion, the phone's gyro is not used"); return; }
     LOG("front end: the phone's gyro drives the controller's six-axis sensor %s", mode < 0 ? "while no controller supplies fresh motion" : "always (DM_PHONE_MOTION=1)");
+    { const char *gs = getenv("DM_MOTION_GAIN"); float gn = gs ? strtof(gs, NULL) : 1.0f; g_motion_gain = gn >= 0.5f && gn <= 2.0f ? gn : 1.0f;
+      const char *fl = getenv("DM_FLICK_ITEM"); g_flick_item = DM_GAME_PAD_STYLE >= 2 && (!fl || atoi(fl));   // the kart styles (g_kart is defined further down)
+      if (g_motion_gain != 1.0f) LOG("front end: tilt sensitivity %.0f %% (DM_MOTION_GAIN)", g_motion_gain * 100);
+      if (g_flick_item) LOG("front end: a sharp forward flick of the phone presses L, the item button, while the kart controls are shown (DM_FLICK_ITEM=0 turns it off)"); }
+    __weak UIView *wbody = body;
     g_motion.deviceMotionUpdateInterval = 1.0 / 100;
     if (@available(iOS 27.0, *)) { g_motion.deviceMotionBody = body; g_motion_body = YES; LOG("front end: the phone's motion comes in the pad view's frame (deviceMotionBody)"); }
     NSOperationQueue *q = [NSOperationQueue new]; q.maxConcurrentOperationCount = 1;
@@ -100,6 +113,18 @@ static void phone_motion_start(UIView *body) {
         float w[3] = {(float)d.rotationRate.x, (float)d.rotationRate.y, (float)d.rotationRate.z}, as[3], ws[3];
         int o = g_motion_body ? 1 : atomic_load(&g_iface_orient);   // the body's frame is already the picture's: the portrait map, which leaves it as it is
         motion_phone_to_switch(o, a, as); motion_phone_to_switch(o, w, ws);
+        if (g_motion_gain != 1.0f) {   // sensitivity: the turn rates scaled, and the tilt about the picture's depth axis (the kart's steering: gravity's x share) widened, the vector kept at its length
+            float m0 = sqrtf(as[0] * as[0] + as[1] * as[1] + as[2] * as[2]); as[0] *= g_motion_gain;
+            float m1 = sqrtf(as[0] * as[0] + as[1] * as[1] + as[2] * as[2]); if (m1 > 0) for (int i = 0; i < 3; i++) as[i] *= m0 / m1;
+            for (int i = 0; i < 3; i++) ws[i] *= g_motion_gain;
+        }
+        // The forward flick: a turn about the picture's x axis (its top edge dipping away from or toward the player) faster than 4.5 rad/s, once per 0.6 s, with the kart controls shown.
+        // Steering tilts the phone about its depth axis, which this never reaches
+        if (g_flick_item && atomic_load(&g_pad_shown)) {   // the top edge dipping away is a negative turn (measured: forward flicks -4.7 to -6.5 rad/s); toward the player, positive: the item thrown backwards (stick down + L)
+            static double lastFlick; double now = d.timestamp;
+            if (fabsf(w[0]) > 4.5f && now - lastFlick > 0.6) { lastFlick = now; BOOL back = w[0] > 0; LOG("front end: %s flick (%.1f rad/s): %s", back ? "backward" : "forward", w[0], back ? "down + L, the item thrown backwards" : "L, the item");
+                dispatch_async(dispatch_get_main_queue(), ^{ UIView *b = wbody; if (b) { if (back) [(DmGamepad *)b pulse:1ull << B_L ly:-32767 ms:200]; else [(DmGamepad *)b pulse:1ull << B_L ms:150]; } }); }
+        }
         dm_motion_set_switch(0, as, ws);
     }];
 }
@@ -156,8 +181,6 @@ static const int k_btns[] = {B_ZL, B_L, B_ZR, B_R, B_MINUS, B_PLUS, B_LS, B_RS};
 static NSString *const k_layout_key = @"DmPadLayout";   // NSUserDefaults: 0 = 2D, 1 = 3D, 2 = Tap (DM_GAME_PAD_LAYOUT's numbers)
 int dm_opmode(void);   // hle_oe.c: 0 = handheld
 
-@interface DmGamepad : UIView
-@end
 static __weak DmGamepad *g_view;
 static void pads_start(void);   // Physical controllers, below
 
@@ -182,7 +205,7 @@ static void pads_start(void);   // Physical controllers, below
     BOOL _padAuto, _autoHidden;                    // pad_style kart, DM_KART_PAD auto (the launcher's On-screen controls, the default): the controls show while the game draws its world (dm_world_draws,
                                                    // 1,200 and more a frame: races, Free Roam, the title demo) and hide in its menus (150 to 300), where every touch goes to the game's touch screen
     double _drawsEma; int _autoCount; NSTimer *_autoTimer;
-    BOOL _lrArmed; uint64_t _pulseMask;            // pad_style kart: two fingers down on no control press L and R together for 150 ms (the title screen's "Press L + R"; a single stray touch does nothing);
+    BOOL _lrArmed; uint64_t _pulseMask; int32_t _pulseLy;            // pad_style kart: two fingers down on no control press L and R together for 150 ms (the title screen's "Press L + R"; a single stray touch does nothing);
                                                    // _pulseMask: buttons a gesture holds for a moment (pulse:), added to the mask recompute publishes
     // The hidden controls' gestures (the kart style, DM_KART_PAD auto; Mario Kart World reads the touch screen but acts on nothing in its menus, measured 2026-11-08): a tap presses A,
     // a swipe the D-pad in its direction, a long press B. Per touch: where it began, when, and whether it has fired
@@ -462,6 +485,7 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
         CGFloat m = fmin((d - dz) / (R * K_FULL - dz), 1) / d;   // outside the dead zone: 0 rising to full at the full-tilt radius
         ax[i * 2] = (int32_t)lrint(o.x * m * 32767); ax[i * 2 + 1] = (int32_t)lrint(-o.y * m * 32767);   // host: up is positive; rounded so full tilt is exactly 32767
     }
+    if (_pulseLy) ax[1] = _pulseLy;   // a gesture holding the left stick (the backward flick's down)
     BOOL changed = face != _faceBits || dpad != _dpadBits || btn != _btnBits || swap != _swapHeld || driftChanged;
     uint64_t pressed = (face | dpad | btn) & ~(_faceBits | _dpadBits | _btnBits);
     unsigned gripping = (_stick[0] ? 1u : 0) | (_stick[1] ? 2u : 0);
@@ -581,7 +605,7 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
     [self setControlsHidden:!_autoHidden why:why];
 }
 - (void)setControlsHidden:(BOOL)hide why:(const char *)why {
-    _autoHidden = hide; _autoCount = 0; _controls.hidden = _padOff || hide; [self reset];
+    _autoHidden = hide; _autoCount = 0; _controls.hidden = _padOff || hide; atomic_store(&g_pad_shown, !_controls.hidden); [self reset];
     LOG("front end: on-screen controls %s (%s)", hide ? "hidden" : "shown", why);
 }
 // The kart style's two-finger tap: two touches on no control (the game's touch screen or empty) at once press L and R together for 150 ms, once per such pair, for the title screen's
@@ -597,10 +621,11 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
     if (now - _lrLast < 0.45) { _lrLast = 0; [self setControlsHidden:!_autoHidden why:"a two-finger double tap"]; } else _lrLast = now;
 }
 // Buttons held for a moment by a gesture: added to the published mask now, taken out after ms (an overlapping pulse of the same buttons ends with the later one)
-- (void)pulse:(uint64_t)mask ms:(int)ms {
-    _pulseMask |= mask; [self recompute];
+- (void)pulse:(uint64_t)mask ms:(int)ms { [self pulse:mask ly:0 ms:ms]; }
+- (void)pulse:(uint64_t)mask ly:(int32_t)ly ms:(int)ms {
+    _pulseMask |= mask; if (ly) _pulseLy = ly; [self recompute];
     __weak typeof(self) w = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ms * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ typeof(self) s = w; if (s) { s->_pulseMask &= ~mask; [s recompute]; } });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ms * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ typeof(self) s = w; if (s) { s->_pulseMask &= ~mask; if (ly) s->_pulseLy = 0; [s recompute]; } });
 }
 - (void)reset { [_owner removeAllObjects]; [_faceOf removeAllObjects]; [_gStart removeAllObjects]; [_gTime removeAllObjects]; [_gFired removeAllObjects]; _stick[0] = _stick[1] = nil; for (int i = 0; i < 16; i++) _game[i] = nil; [self pushGame]; [self recompute]; }
 
@@ -830,7 +855,7 @@ static BOOL pads_slotted(GCController *gone) {
     GCController *c = note.object, *gone = [note.name isEqual:GCControllerDidDisconnectNotification] ? c : nil;
     if (c && (!c.extendedGamepad || g_merge)) LOG("controller %s: %s%s", gone ? "disconnected" : "connected", pad_name(c), c.extendedGamepad ? "" : " (no extended gamepad profile: not used)");
     BOOL any = g_merge ? pads_merged(gone) : pads_slotted(gone);
-    dispatch_async(dispatch_get_main_queue(), ^{ self->_padOff = any; self->_controls.hidden = any || self->_autoHidden; [self reset]; });   // the touch gamepad hides while any controller is in use
+    dispatch_async(dispatch_get_main_queue(), ^{ self->_padOff = any; self->_controls.hidden = any || self->_autoHidden; atomic_store(&g_pad_shown, !self->_controls.hidden); [self reset]; });   // the touch gamepad hides while any controller is in use
 }
 @end
 
