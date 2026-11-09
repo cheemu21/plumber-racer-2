@@ -46,6 +46,11 @@ shader_note	Mario Kart World shaders
 # agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza (its game note): the same engine here, so they are evaluated from the start
 render_cond	on
 
+# ---- iPhone picture and frame rate (the render-scale and present-interval stubs of patches.py, from the nxnative-mkw port of this build) ----
+# The 3D views at 80 % of the game's size on the iPhone, as that port's High preset for 12 GB phones (iPhone 17 Pro, Air); the frame-rate lock stays off there (the game's own 60 / 30 choice),
+# both to change in the settings screen
+render_scale_ios	0.80
+
 # ---- Operation mode ----
 # The user plays this port handheld at 60 fps (the iPhone, and the Mac for testing): the game starts in handheld mode
 op_mode	handheld

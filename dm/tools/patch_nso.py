@@ -1372,6 +1372,7 @@ obs += region_obs
 # no rewrite site, ctx.put(offset, words, reason) writes it (listed with the cuts), ctx.state is the state page's offset, and ctx.render_scale = 1 marks a render-scale stub
 FRAME_STEP = PATCHES['FRAME_STEP']
 FS_STATE_OFF = 0
+FPS_LOCK = 0   # 1 = the build has a present-interval lock stub (state +0x14, DM_FPS_LOCK): the fixups table says so (FPS_LOCK) and the iOS launcher offers Frame rate by it (dm/games/settings.tsv)
 RENDER_SCALE = 0   # 1 = the build has a render-scale stub (state +0x10): the fixups table says so (RENDER_SCALE), and the iOS launcher offers the setting (dm/games/settings.tsv)
 if BUILD_ID in FRAME_STEP and NAME == 'main':
     FS_STATE_OFF = KEY_PAGE_OFF + 0x4000
@@ -1390,8 +1391,8 @@ if BUILD_ID in FRAME_STEP and NAME == 'main':
         for i, w in enumerate(words): struct.pack_into('<I', IMG, off + 4 * i, w)
         cuts.append((off, old.hex(), bytes(IMG[off:off + 4 * len(words)]).hex(), why)); stat('frame_step')
 if FS_STATE_OFF:   # the build's stubs (FRAME_STEP of its patches.py)
-    use_area(0); fs = types.SimpleNamespace(here=here, emit=emit, site=fs_site, put=fs_put, state=FS_STATE_OFF, render_scale=0)
-    FRAME_STEP[BUILD_ID](fs); RENDER_SCALE = fs.render_scale
+    use_area(0); fs = types.SimpleNamespace(here=here, emit=emit, site=fs_site, put=fs_put, state=FS_STATE_OFF, render_scale=0, fps_lock=0)
+    FRAME_STEP[BUILD_ID](fs); RENDER_SCALE = fs.render_scale; FPS_LOCK = fs.fps_lock
 
 # ---- Spin waits (every module) ----
 # A guest loop that polls memory until another thread changes it fills only its own core on the Switch, where any higher-priority thread pinned there preempts it, so the
@@ -1723,6 +1724,7 @@ with open(P('fixups.tsv'), 'w') as f:
     if FS_STATE_OFF: f.write(f'# FPS_STATE_OFF\t{FS_STATE_OFF:#x}\n')   # frame step state page (FRAME_STEP): the loader writes the target fps there
     if UE_CALL is not None: f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
     for n, o in UE_CVARS.items(): f.write(f'# UE_CVAR:{n}\t{o:#x}\n')   # Unreal console variables (ue_cvar.py): the TAutoConsoleVariable registered under each name
+    if FPS_LOCK: f.write('# FPS_LOCK\t1\n')   # a present-interval lock stub reads state +0x14
     if RENDER_SCALE: f.write('# RENDER_SCALE\t1\n')   # a render-scale stub reads state +0x10 (the loader ignores the key; dm/games/settings.py offers the setting by it)
     if NAME == 'main':
         for capability in PATCHES['CAPABILITIES'].get(BUILD_ID, ()):

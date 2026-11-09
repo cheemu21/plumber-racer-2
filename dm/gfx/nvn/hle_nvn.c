@@ -2037,6 +2037,7 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
     dump_frame();
     if (g_frame % TWIN == 0) tsummary(g_frame);
     mtl_set_frame(g_frame);
+    { void dm_fps_movie_check(void); dm_fps_movie_check(); }   // the present interval lock back after a movie (loader.c)
     // Real-device semantics: present only enqueues and returns immediately; this frame's display time is scheduled by the pacer, and the texture can be acquired again only at "display time + one period" (blocking in AcquireTexture)
     uint64_t period = present_period(o), now = dm_detclock_enabled() ? guest_ns() : now_ns();
     g_hold_ring[o->presents % 16] = (uint8_t)present_itv(o);

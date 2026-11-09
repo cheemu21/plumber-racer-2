@@ -112,6 +112,12 @@ def header(g):
         sys.exit(f"{g.id}: pso_gpu takes 1-4 whitespace-separated GPU architectures such as 'g18p applegpu_g19p' (each an optional applegpu_ prefix then an alphanumeric token; there is no none: omit the key for g18p with pso_mtl4 on, or no archive with pso_mtl4 off): {pg}")
     et = g.get('enc_thread', 'off')   # Metal encoding on its own thread on the Mac by default (nvn_rec.h rec_on; on iOS it is on for every game; DM_NVN_ENC_THREAD overrides): on / off
     if et not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread must be on or off: {et}')
+    eti = g.get('enc_thread_ios', 'on')   # the same on the iPhone (on by default; Mario Kart World ran steadier and cooler without it on an 8 GB iPhone in the nxnative-mkw port): on / off
+    if eti not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread_ios must be on or off: {eti}')
+    rsi = g.get('render_scale_ios', '1.0')   # the render scale slider's default on the iPhone (DM_RENDER_SCALE, settings.tsv; a game with a render-scale stub): 0.5 to 1.0
+    try: ok = 0.5 <= float(rsi) <= 1.0
+    except ValueError: ok = False
+    if not ok: sys.exit(f'{g.id}: render_scale_ios must be 0.5 to 1.0: {rsi}')
     cp = g.get('core_preempt', 'off')   # same-core preemption approximation (hle_thread.c): on / off
     if cp not in ('on', 'off'): sys.exit(f'{g.id}: core_preempt must be on or off: {cp}')
     aba = g.get('alloc_big_align', 'off')   # nn::mem::StandardAllocator::Allocate aligns blocks of 64 KB or more to 64 KB (hle_os.c; Vanillaware's memory pool storage): on / off
@@ -197,6 +203,8 @@ def header(g):
          f'#define DM_GAME_PRESENT_SNAP {int(ps == "on")}',
          f'#define DM_GAME_PSO_MTL4 {int(p4 == "on")}',
          f'#define DM_GAME_ENC_THREAD {int(et == "on")}',
+         f'#define DM_GAME_ENC_THREAD_IOS {int(eti == "on")}',
+         f'#define DM_GAME_RENDER_SCALE_IOS {q(rsi)}',
          *([f'#define DM_GAME_SHARED_FONT_TTF {int(sf == "ttf")}'] if g.get('shared_font', '') else []),   # without the key the host decides by the SDK version (hle_sdk16.c)
          f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
          f'#define DM_GAME_PAD_STYLE {("classic", "mobile", "kart", "kartworld").index(pst)}',

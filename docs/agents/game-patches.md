@@ -69,6 +69,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | 60 fps frame step and render scale (ksys::VFR) | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | the game's own frame code; the frame-step state page is general |
 | `build` → `game` | 60 fps frame step: the KIDS frame task and frame-rate block | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md) | the game's own frame code; only the host's frame-step state page is shared. Fire Emblem: Three Houses and Taiko Risshiden V DX run on KTGL too, with other frame code |
 | `build` → `game` | frame step floor 2 → 1 vsync, and its frame step | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | the game's own clock floor and step |
+| `build` → `game` | render scale | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | the game's own view sizing function |
 
 ## Summary
 
@@ -86,6 +87,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Luigi's Mansion 3](#luigis-mansion-3) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Mario + Rabbids Kingdom Battle](#mario--rabbids-kingdom-battle) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 7 | 0 | 0 | 0 | 0 | `build` → `game` ×2 |
+| [Mario Kart World](#mario-kart-world) | 0 | 0 | 4 | 0 | 0 | `build` → `game` |
 | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
 | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
@@ -371,6 +373,19 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - cut `+0x164338`: Snowdrop large allocator: maximum 64 KB page count 65536 -> 32768, matching its 2 GB range (mov w5,#0x8000)
   - cut `+0x94354`: Unused 272-byte slot pool: 4,194,304 -> 65,536 slots, 1.06 GB -> 17 MB of address space (mov w1,#0x10000)
 
+### Mario Kart World
+
+[Mario Kart World](../../dm/games/0400C3F00006E000/README.md), `0400C3F00006E000`, [patches.py](../../dm/games/0400C3F00006E000/patches.py).
+
+- **`build` → `game`**, frame rate, blocked: frame-step stubs have no function-matched form yet, judgement: render scale. The game's own view sizing function
+
+- **unregistered build** `d00e4f39…` ([patches.py:36](../../dm/games/0400C3F00006E000/patches.py#L36))
+  - frame step `+0x474a24`: dynamic resolution: the scaler gate opens at a host render scale
+  - frame step `+0x474a48`: dynamic resolution: the view mask check is skipped at a host render scale
+  - frame step `+0x69ccf4`: present interval lock (DM_FPS_TARGET)
+  - frame step `+0x25b6cbc`: dynamic resolution: the scaler stores the host render scale
+  - render scale stub (the launcher offers DM_RENDER_SCALE)
+
 ### Monster Hunter Rise
 
 [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), `0100B04011742000`.
@@ -627,6 +642,7 @@ Profile keys (`game.tsv`) whose value changes what the host does, set away from 
 | `mem_file on` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | `game` → `host`, gap | off by default: iOS wires a zero-copy buffer whole, and over file pages that takes minutes, so it needs a game whose large pools have no buffer |
 | `present_snap on` | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | `game` → `host`, gap | a setting the game was tested with: a default for every game after `regress.py check` on the games |
 | `pso_mtl4 on` | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | `game` → `host`, gap | a setting the game was tested with on an iPhone: a default for every game after `regress.py check` on the games |
+| `render_scale_ios 0.80` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | `game`, at goal | what the phone generation can render at: Mario Kart World 1.8.0 at 80 % on 12 GB phones (the nxnative-mkw port's High preset) |
 | `shader_key_skip 0x770+0x78` | [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md) | `game`, at goal | the engine shares one control section among shaders; leaving GLSLC's compile information out of every game's keys would change every shader key |
 | `shader_key_skip 0x7d0+0x18` | [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) | `game`, at goal | the engine shares one control section among shaders; leaving GLSLC's compile information out of every game's keys would change every shader key |
 | `stdalloc_cap 0xa0000000` | [Absolum](../../dm/games/0100A83022A22000/README.md) | `game`, at goal | what the regions after it need, measured by the NSP script's region check; the host's cap is the default |
