@@ -11,7 +11,7 @@
 # runtime refuses without entitlements, and so the app cannot be notarized.
 # Usage: pack_app.py <out.app> --host <dmhost> --patched <dir> --romfs <image or dir> --msl <dir> --tables <profile dir> --font <dir> --title-id <id> --name <name> [options]
 #   Reuses <out.app> while <out.app>.key matches; otherwise writes <out.app>.partial and swaps it in at the end. Prints "step: ..." and "app: <path>[, reused (inputs unchanged)]".
-import argparse, ctypes, hashlib, json, os, plistlib, re, shutil, stat, subprocess, sys, tempfile
+import argparse, ctypes, errno, hashlib, json, os, plistlib, re, shutil, stat, subprocess, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -197,7 +197,13 @@ def replace_app(tmp, out):
         swap.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
         swap.restype = ctypes.c_int
         if swap(os.fsencode(tmp), os.fsencode(out), 2):
-            err = ctypes.get_errno(); raise OSError(err, os.strerror(err), str(out))
+            err = ctypes.get_errno()
+            if err != errno.ENOTSUP: raise OSError(err, os.strerror(err), str(out))
+            # HFS+ (an external drive formatted before APFS) has no RENAME_SWAP: the old app steps aside, the new one takes its place, and the old one goes; a failure
+            # between the two renames leaves the old app at <out>.old
+            old = out.with_name(out.name + '.old'); shutil.rmtree(old, ignore_errors=True)
+            out.rename(old); tmp.rename(out); shutil.rmtree(old, ignore_errors=True)
+            return
     else:
         tmp.rename(out)
 
