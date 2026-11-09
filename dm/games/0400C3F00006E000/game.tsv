@@ -51,6 +51,13 @@ render_cond	on
 # both to change in the settings screen
 render_scale_ios	0.80
 
+# ---- iPhone on-screen controls (DmGamepad.m, hle_fs.c dm_pad_hint) ----
+# The controls show when the game opens a file of its play and hide when it opens a menu's, where every touch goes to the game's touch screen. Its layouts are named for their screens:
+# the race HUD (RaceInfo), the minimaps, the pause menu and the finish banner mean play; the title, the game and mode menus, the character, kart and course selects and the results mean a menu.
+# The main menu draws a whole world behind its panels (1,400 to 2,400 draws a frame on an iPhone 17 Pro, as a race), so the draw count alone could not tell them apart
+pad_show_files	Layout/RaceInfo Layout/MiniMap_ Layout/PauseMenu Layout/RaceFinish
+pad_hide_files	Layout/Title Layout/GameMenu Layout/Menu Layout/CharaSelect Layout/MachineSelect Layout/MapStageSelect Layout/Result Layout/AfterRaceMenu
+
 # ---- Operation mode ----
 # The user plays this port handheld at 60 fps (the iPhone, and the Mac for testing): the game starts in handheld mode
 op_mode	handheld

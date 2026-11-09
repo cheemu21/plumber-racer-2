@@ -802,7 +802,10 @@ HLE_FORCE("_ZN2nn3hid28ShowControllerFirmwareUpdateERKNS0_27ControllerFirmwareUp
 // the Mac's mouse, the iPhone touches no gamepad control takes, DM_KEYS taps) in handheld mode, as on the Switch, whose screen is out of reach when docked: a game may read touches
 // without checking the mode, so in console mode the state stays empty (only the header is written). Super Mario Galaxy's pointer is the touch screen in handheld mode
 int touch_fill_n(void *out, int max, uint64_t now_ns);
+static _Atomic uint32_t g_touch_reads;   // every read of the touch screen's state: a front end tells a game's menus (which read it) from its play (DmGamepad.m)
+uint32_t dm_touch_reads(void) { return atomic_load(&g_touch_reads); }
 static void touch_read(void *s, int n) {
+    atomic_fetch_add(&g_touch_reads, 1);
     keys_sync();   // DM_KEYS frame steps due in this frame (their touches), before the read
     if (dm_opmode() == 0) { touch_fill_n(s, n, now_ns()); return; }
     int64_t *p = s; p[0] = atomic_fetch_add(&g_sampling, 1) + 1; ((int32_t *)s)[2] = 0; ((int32_t *)s)[3] = 0;

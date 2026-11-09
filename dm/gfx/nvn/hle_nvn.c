@@ -1134,6 +1134,10 @@ NVN(nvnCommandBufferDrawArrays, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, 
 // issues a Metal indirect draw from the pool buffer instead of reading it at record or replay time (nvn_mtl.m draw)
 // NVN2 mesh draw: count task (or, with no task stage, mesh) workgroups from first, recorded as a draw of the replay's own primitive (nvn_obj.h NVN_PRIM_MESH), so the pass
 // planning sees a draw that needs the pass's depth and colour like any other. Mario Kart World's race pass draws with it
+// The draws of the last presented frame, for a front end that tells the game's world from its menus by it (DmGamepad.m: Mario Kart World's kart controls hide in menus, where the game
+// draws about 150 to 300 a frame on the iPhone, and show while it draws its world, 1,200 and more)
+static _Atomic uint32_t g_world_draws;
+uint32_t dm_world_draws(void) { return atomic_load(&g_world_draws); }
 NVN_NOPROTO(nvnCommandBufferDrawMeshTasks, void, NVNcommandBuffer *c, int first, int n) { if (n > 0) rec_draw(c, (p_draw){NVN_PRIM_MESH, first, n, 1, 0, 0}); }
 NVN(nvnCommandBufferDrawArraysIndirect, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, NVNbufferAddress ind) { rec_draw(c, (p_draw){pr, 0, 0, 1, 0, ind}); }
 NVN(nvnCommandBufferDrawElementsInstanced, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, NVNindexType it, int n, NVNbufferAddress ib,
@@ -2033,6 +2037,7 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
               // Visibility: during the time a long frame "comes out late", what stays on screen is the previous frame; if the previous frame was a loading screen (or this frame itself is one), all the player sees is the loading screen staying a bit longer, with no motion interrupted
               dm_longframe_note(b); } }
         uint64_t g0, g1; if (frame_rec() && mtl_gpu_span(f - 8, &g0, &g1)) { trow(f - 8, "@gpu_beg_ms", (g0 - g_t0_ns) / 1e6); trow(f - 8, "@gpu_end_ms", (g1 - g_t0_ns) / 1e6); } }
+    atomic_store(&g_world_draws, (uint32_t)(dr - prev_draw));
     prev_in = t0; prev_pass = ps; prev_draw = dr;
     dump_frame();
     if (g_frame % TWIN == 0) tsummary(g_frame);

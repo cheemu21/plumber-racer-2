@@ -30,7 +30,7 @@
 #include <stdatomic.h>
 
 enum { B_A = 0, B_B, B_X, B_Y, B_LS, B_RS, B_L, B_R, B_ZL, B_ZR, B_PLUS, B_MINUS, B_LEFT, B_UP, B_RIGHT, B_DOWN, B_N };
-enum { C_NONE = 0, C_STICK, C_DPAD, C_FACE, C_BTN, C_SWAP, C_GAME };   // which control a touch holds; C_GAME: none, the touch goes to the game's touch screen (finger slot << 8)
+enum { C_NONE = 0, C_STICK, C_DPAD, C_FACE, C_BTN, C_SWAP, C_GAME, C_EMPTY, C_GESTURE };   // which control a touch holds; C_GAME: none, the touch goes to the game's touch screen (finger slot << 8); C_EMPTY: none, kept (the kart style's two-finger tap)
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_touch_btn, g_shake_btn;
@@ -179,6 +179,15 @@ static void pads_start(void);   // Physical controllers, below
     CALayer *_controls;                            // holds every control layer: hidden while a physical controller is connected (the view itself stays, for game touches)
     BOOL _padOff;                                  // a physical controller is connected: every touch goes to the game
     BOOL _kartTouch;                               // pad_style kart with DM_KART_TOUCH=1 (the launcher's Touch on menus): touches no control takes go to the game's touch screen after all
+    BOOL _padAuto, _autoHidden;                    // pad_style kart, DM_KART_PAD auto (the launcher's On-screen controls, the default): the controls show while the game draws its world (dm_world_draws,
+                                                   // 1,200 and more a frame: races, Free Roam, the title demo) and hide in its menus (150 to 300), where every touch goes to the game's touch screen
+    double _drawsEma; int _autoCount; NSTimer *_autoTimer;
+    BOOL _lrArmed; uint64_t _pulseMask;            // pad_style kart: two fingers down on no control press L and R together for 150 ms (the title screen's "Press L + R"; a single stray touch does nothing);
+                                                   // _pulseMask: buttons a gesture holds for a moment (pulse:), added to the mask recompute publishes
+    // The hidden controls' gestures (the kart style, DM_KART_PAD auto; Mario Kart World reads the touch screen but acts on nothing in its menus, measured 2026-11-08): a tap presses A,
+    // a swipe the D-pad in its direction, a long press B. Per touch: where it began, when, and whether it has fired
+    NSMapTable<UITouch *, NSValue *> *_gStart; NSMapTable<UITouch *, NSNumber *> *_gTime; NSHashTable<UITouch *> *_gFired;
+    double _lrLast; int _lastHint;                 // the previous two-finger tap's time (a second within 0.45 s shows or hides the controls by hand) and the last file hint acted on (edge-triggered)
     UITouch *_game[16];                            // touches on the game's touch screen by finger slot
     CAShapeLayer *_worldIcon[2];   // pad_style kartworld: the rewind and map icons
     CAShapeLayer *_drift, *_driftIcon, *_groove[2], *_backIcon, *_mush[3];   // pad_style kart: the drift key and its tire marks, the pedals' grip grooves (gas, brake), look back's mirror, the knob's spots, stem and eyes
@@ -251,12 +260,15 @@ static BOOL keyHidden(int b, BOOL full) {   // the mobile style has no L3 / R3; 
         // The kart style keeps the touch screen from the game by default (Mario Kart opens menus on a tap, and a touch that misses a pedal would). DM_KART_TOUCH=1, the launcher's
         // Touch on menus, gives the game the touches no control takes, for its menus; the player accepts that a stray tap in a race may open one
         const char *kt = getenv("DM_KART_TOUCH"); _kartTouch = g_kart && kt && atoi(kt);
+        const char *kp = getenv("DM_KART_PAD"); _padAuto = g_kart && !(kp && !strcmp(kp, "always"));
+        if (_padAuto) { __weak typeof(self) w = self; _autoTimer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *tm) { [w autoTick]; }]; }
         const char *feedback = getenv("DM_TOUCH_HAPTICS");
         if (!feedback || atoi(feedback)) {
             _touchFeedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
             [_touchFeedback prepare];
         }
         _owner = [NSMapTable strongToStrongObjectsMapTable]; _faceOf = [NSMapTable strongToStrongObjectsMapTable];
+        _gStart = [NSMapTable strongToStrongObjectsMapTable]; _gTime = [NSMapTable strongToStrongObjectsMapTable]; _gFired = [NSHashTable weakObjectsHashTable];
         static dispatch_once_t once;
         dispatch_once(&once, ^{
             // each colour carries its own low opacity instead of lowering the whole view's alpha (that would add an off-screen pass for the full-screen layer)
@@ -442,6 +454,7 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
         if (c == C_BTN) btn |= 1ull << (v >> 8);
         else if (c == C_DPAD) dpad |= [self dpadAt:[t locationInView:self]];
         else if (c == C_SWAP) swap = YES; }
+    btn |= _pulseMask;   // the kart style's gestures: the two-finger tap's L + R, a tap's A, a swipe's D-pad, a long press's B (pulse:)
     int32_t ax[4] = {0};
     for (int i = 0; i < 2; i++) {
         CGPoint o = [self knobOffset:i]; CGFloat R = [self stickR:i], d = hypot(o.x, o.y), dz = R * K_DEAD;
@@ -486,7 +499,9 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
 - (void)touchesBegan:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e {
     BOOL game = NO;
     for (UITouch *t in ts) {
-        if (_padOff) { if (!g_kart || _kartTouch) game |= [self gameBegin:t]; continue; }   // the kart style gives the game the touch screen only with Touch on menus (Mario Kart opens menus on a tap)
+        if (_autoHidden && g_kart && !_kartTouch) {   // the kart controls hidden by the rule or by hand: gestures stand in for the buttons (gestureEnd / touchesMoved), since the game takes no touch
+            CGPoint p = [t locationInView:self]; [_owner setObject:@(C_GESTURE) forKey:t]; [_gStart setObject:[NSValue valueWithCGPoint:p] forKey:t]; [_gTime setObject:@(CACurrentMediaTime()) forKey:t]; continue; }
+        if (_padOff || _autoHidden) { if (_autoHidden || !g_kart || _kartTouch) game |= [self gameBegin:t]; continue; }   // controls hidden: every touch goes to the game, except the kart style's under a controller (Mario Kart opens menus on a tap) unless Touch on menus is on
         CGPoint p = [t locationInView:self]; int hit = _tap ? -1 : [self btnAt:p];
         if (hit >= 0) { [_owner setObject:@(C_BTN | (uint64_t)hit << 8) forKey:t]; continue; }
         if ([self inSwap:p]) { [_owner setObject:@(C_SWAP) forKey:t]; continue; }
@@ -505,14 +520,21 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
         else if (kind == C_DPAD) [_owner setObject:@(C_DPAD) forKey:t];
         else if (kind == C_STICK) { [_owner setObject:@(C_STICK | (uint64_t)idx << 8) forKey:t]; _stick[idx] = t; _stickNow[idx] = p; }
         else if (!g_kart || _kartTouch) game |= [self gameBegin:t];   // the kart style: a touch on no control does nothing, unless Touch on menus is on
+        else [_owner setObject:@(C_EMPTY) forKey:t];
     }
     if (game) [self pushGame];
+    if (g_kart) [self lrCheck];
     [self recompute];
 }
 - (void)touchesMoved:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e {
     BOOL game = NO;
     for (UITouch *t in ts) {
         uint64_t v = [_owner objectForKey:t].unsignedLongLongValue; int c = (int)(v & 0xff); CGPoint p = [t locationInView:self];
+        if (c == C_GESTURE) {   // a swipe of 40 points: one D-pad press in its direction, once per touch
+            if ([_gFired containsObject:t]) continue;
+            CGPoint s = [[_gStart objectForKey:t] CGPointValue]; CGFloat dx = p.x - s.x, dy = p.y - s.y;
+            if (hypot(dx, dy) < 40) continue;
+            [_gFired addObject:t]; [self pulse:1ull << (fabs(dx) > fabs(dy) ? (dx > 0 ? B_RIGHT : B_LEFT) : (dy > 0 ? B_DOWN : B_UP)) ms:120]; continue; }
         if (c == C_FACE) { uint64_t f = [self faceAt:p], was = [_faceOf objectForKey:t].unsignedLongLongValue;
             if (g_kart && !f && (was & (1ull << B_A | 1ull << KT_DRIFT_BIT | 1ull << KT_ITEM_BIT))) f = 1ull << B_A;   // between gas, drift and item: keep the gas
             if (g_kart && (was & 1ull << KT_ITEM_BIT) && (f & 1ull << KT_DRIFT_BIT)) f |= 1ull << KT_ITEM_BIT;   // an item held from item stays held on to drift (dragging it while drifting); back on gas it lets go
@@ -531,15 +553,56 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
         uint64_t v = [_owner objectForKey:t].unsignedLongLongValue;
         if (ended && (v & 0xff) == C_SWAP && [self inSwap:[t locationInView:self]]) swap = YES;   // layout button: counts only when released on the button
         if ((v & 0xff) == C_GAME && (v >> 8) < 16) { _game[v >> 8] = nil; game = YES; }
+        if ((v & 0xff) == C_GESTURE) {   // a touch that did not swipe: a tap (under 0.5 s) presses A, a long press B; a cancelled touch presses nothing
+            if (ended && ![_gFired containsObject:t]) [self pulse:1ull << (CACurrentMediaTime() - [_gTime objectForKey:t].doubleValue < 0.5 ? B_A : B_B) ms:120];
+            [_gStart removeObjectForKey:t]; [_gTime removeObjectForKey:t]; [_gFired removeObject:t]; }
         [_owner removeObjectForKey:t]; [_faceOf removeObjectForKey:t]; for (int i = 0; i < 2; i++) if (t == _stick[i]) _stick[i] = nil;
     }
     if (game) [self pushGame];
+    if (g_kart) [self lrCheck];
     [self recompute];
     if (swap) [self nextLayout];
 }
 - (void)touchesEnded:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e { [self endTouches:ts tapped:YES]; }
 - (void)touchesCancelled:(NSSet<UITouch *> *)ts withEvent:(UIEvent *)e { [self endTouches:ts tapped:NO]; }
-- (void)reset { [_owner removeAllObjects]; [_faceOf removeAllObjects]; _stick[0] = _stick[1] = nil; for (int i = 0; i < 16; i++) _game[i] = nil; [self pushGame]; [self recompute]; }
+// On-screen controls in races only (DM_KART_PAD auto): the draws of the last frame, smoothed, say whether the game draws its world. Hysteresis (hide under 500, show over 800) and 0.8 s of
+// agreement keep a loading screen's black frames or a menu's busy transition from flickering the controls
+- (void)autoTick {
+    double d = dm_world_draws(); _drawsEma = _drawsEma * 0.7 + d * 0.3;
+    int hint = dm_pad_hint();   // the files the game opened decide, on each change (the profile's pad_show_files / pad_hide_files); the draw count only before the first of them (boot, the title demo)
+    { static uint32_t last; static int tick; uint32_t r = dm_touch_reads();
+      if (++tick % 30 == 0) { LOG("front end: pad signal: %.0f draws a frame, %.1f touch reads a second, file hint %d, controls %s", _drawsEma, (r - last) / 3.0, hint, _autoHidden ? "hidden" : "shown"); last = r; } }
+    if (hint != _lastHint) { _lastHint = hint; if (hint) { BOOL hide = hint == 2; if (hide != _autoHidden) [self setControlsHidden:hide why:hide ? "the game opened a menu's files: touches go to the game" : "the game opened its play's files"]; return; } }
+    if (_lastHint) return;   // a hint has decided; the player's two-finger double tap changes it by hand (lrCheck)
+    BOOL flip = _autoHidden ? _drawsEma > 800 : _drawsEma < 500;
+    if (!flip) { _autoCount = 0; return; }
+    if (++_autoCount < 8) return;
+    char why[96]; snprintf(why, sizeof why, "%.0f draws a frame: %s", _drawsEma, _autoHidden ? "the game's world" : "a menu, touches go to the game");
+    [self setControlsHidden:!_autoHidden why:why];
+}
+- (void)setControlsHidden:(BOOL)hide why:(const char *)why {
+    _autoHidden = hide; _autoCount = 0; _controls.hidden = _padOff || hide; [self reset];
+    LOG("front end: on-screen controls %s (%s)", hide ? "hidden" : "shown", why);
+}
+// The kart style's two-finger tap: two touches on no control (the game's touch screen or empty) at once press L and R together for 150 ms, once per such pair, for the title screen's
+// "Press L + R" and the controller screens that ask for it; a single stray touch presses nothing (in a race L and R would be a drift and an item)
+- (void)lrCheck {
+    NSMutableArray<UITouch *> *free = [NSMutableArray array];
+    for (UITouch *t in _owner) { int c = (int)([_owner objectForKey:t].unsignedLongLongValue & 0xff); if (c == C_GAME || c == C_EMPTY || c == C_GESTURE) [free addObject:t]; }
+    if (free.count < 2) { _lrArmed = NO; return; }
+    for (UITouch *t in free) [_gFired addObject:t];   // a pair is no tap or swipe
+    if (_lrArmed) return;
+    _lrArmed = YES; [_touchFeedback impactOccurred]; [self pulse:1ull << B_L | 1ull << B_R ms:150];
+    double now = CACurrentMediaTime();   // a second two-finger tap within 0.45 s: the controls shown or hidden by hand (the automatic rule takes over again at the game's next screen change)
+    if (now - _lrLast < 0.45) { _lrLast = 0; [self setControlsHidden:!_autoHidden why:"a two-finger double tap"]; } else _lrLast = now;
+}
+// Buttons held for a moment by a gesture: added to the published mask now, taken out after ms (an overlapping pulse of the same buttons ends with the later one)
+- (void)pulse:(uint64_t)mask ms:(int)ms {
+    _pulseMask |= mask; [self recompute];
+    __weak typeof(self) w = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ms * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ typeof(self) s = w; if (s) { s->_pulseMask &= ~mask; [s recompute]; } });
+}
+- (void)reset { [_owner removeAllObjects]; [_faceOf removeAllObjects]; [_gStart removeAllObjects]; [_gTime removeAllObjects]; [_gFired removeAllObjects]; _stick[0] = _stick[1] = nil; for (int i = 0; i < 16; i++) _game[i] = nil; [self pushGame]; [self recompute]; }
 
 // ---- Shapes ----
 static CGPathRef circlePath(CGPoint c, CGFloat r) { return CGPathCreateWithEllipseInRect(CGRectMake(c.x - r, c.y - r, 2 * r, 2 * r), NULL); }
@@ -767,7 +830,7 @@ static BOOL pads_slotted(GCController *gone) {
     GCController *c = note.object, *gone = [note.name isEqual:GCControllerDidDisconnectNotification] ? c : nil;
     if (c && (!c.extendedGamepad || g_merge)) LOG("controller %s: %s%s", gone ? "disconnected" : "connected", pad_name(c), c.extendedGamepad ? "" : " (no extended gamepad profile: not used)");
     BOOL any = g_merge ? pads_merged(gone) : pads_slotted(gone);
-    dispatch_async(dispatch_get_main_queue(), ^{ self->_padOff = any; self->_controls.hidden = any; [self reset]; });   // the touch gamepad hides while any controller is in use
+    dispatch_async(dispatch_get_main_queue(), ^{ self->_padOff = any; self->_controls.hidden = any || self->_autoHidden; [self reset]; });   // the touch gamepad hides while any controller is in use
 }
 @end
 

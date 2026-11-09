@@ -130,6 +130,24 @@ static int dm_fs_test_fail(const char *pt) {
 static int in_txn_dir(const char *hp) { return save_txn_from_path(hp); }
 static int rm_tree(const char *p);
 // Reads and checks a RomFS image's header and index; NULL (and a red line) when it is not a complete image
+// The on-screen controls' hint from the files the game opens (dm_pad_hint, front.h; DmGamepad.m): a path holding one of the profile's pad_show_files substrings marks play (1: Mario Kart World's
+// RaceInfo and minimap layouts), one of pad_hide_files a menu (2: its Title, GameMenu, select and Result layouts); the last match wins, 0 before any. A draw count cannot tell them apart there,
+// since its main menu draws a whole world behind its panels
+static _Atomic int g_pad_hint;
+int dm_pad_hint(void) { return atomic_load(&g_pad_hint); }
+static int path_has_any(const char *path, const char *list) {   // whether the path holds one of the space-separated substrings
+    for (const char *p = list; *p;) {
+        while (*p == ' ') p++; const char *e = p; while (*e && *e != ' ') e++;
+        if (e > p) { char w[128]; size_t n = (size_t)(e - p) < sizeof w - 1 ? (size_t)(e - p) : sizeof w - 1; memcpy(w, p, n); w[n] = 0; if (strstr(path, w)) return 1; }
+        p = e;
+    }
+    return 0;
+}
+static void pad_hint_path(const char *path) {
+    if (DM_GAME_PAD_SHOW_FILES[0] && path_has_any(path, DM_GAME_PAD_SHOW_FILES)) atomic_store(&g_pad_hint, 1);
+    else if (DM_GAME_PAD_HIDE_FILES[0] && path_has_any(path, DM_GAME_PAD_HIDE_FILES)) atomic_store(&g_pad_hint, 2);
+}
+
 static romfs_img *img_open(const char *path) {
     romfs_img *m = romfs_image_open(path);
     if (m) LOG("fs RomFS image %s: %llu entries", path, (unsigned long long)m->n);
@@ -746,7 +764,7 @@ HLE_FORCE("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci", "fsp-srv → open(2)", Re
         img_ent *ent = &g_mnt[mi].img->e[k];   // a damaged file is named once, at its first open
         if ((ent->flags & IMG_ENT_DAMAGED) && !(__atomic_fetch_or(&ent->flags, IMG_ENT_REPORTED, __ATOMIC_RELAXED) & IMG_ENT_REPORTED))
             LOG("[RED] fs %s failed the NCA's hash check when it was extracted (a damaged NSP, --allow-damaged); its bytes may be wrong", path);
-        *out = FH_OUT(IMG_HANDLE(mi, k));
+        *out = FH_OUT(IMG_HANDLE(mi, k)); pad_hint_path(path);
         if (g_flag.fs) LOG("fs open [%.2fs] %s mode=%d → image entry %lld", (now_ns() - g_t0_ns) / 1e9, path, mode, (long long)k);
         return RES_OK;
     }
