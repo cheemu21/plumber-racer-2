@@ -112,7 +112,7 @@ def header(g):
         sys.exit(f"{g.id}: pso_gpu takes 1-4 whitespace-separated GPU architectures such as 'g18p applegpu_g19p' (each an optional applegpu_ prefix then an alphanumeric token; there is no none: omit the key for g18p with pso_mtl4 on, or no archive with pso_mtl4 off): {pg}")
     et = g.get('enc_thread', 'off')   # Metal encoding on its own thread on the Mac by default (nvn_rec.h rec_on; on iOS it is on for every game; DM_NVN_ENC_THREAD overrides): on / off
     if et not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread must be on or off: {et}')
-    eti = g.get('enc_thread_ios', 'on')   # the same on the iPhone (on by default; Mario Kart World ran steadier and cooler without it on an 8 GB iPhone in the nxnative-mkw port): on / off
+    eti = g.get('enc_thread_ios', 'on')   # the same on the iPhone (on by default; the nxnative-mkw port measured a steadier, cooler 30 fps in Mario Kart World on an iPhone 16 Pro Max with it off): on / off
     if eti not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread_ios must be on or off: {eti}')
     rsi = g.get('render_scale_ios', '1.0')   # the render scale slider's default on the iPhone (DM_RENDER_SCALE, settings.tsv; a game with a render-scale stub): 0.5 to 1.0
     try: ok = 0.5 <= float(rsi) <= 1.0

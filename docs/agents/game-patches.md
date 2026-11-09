@@ -69,6 +69,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | 60 fps frame step and render scale (ksys::VFR) | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | the game's own frame code; the frame-step state page is general |
 | `build` → `game` | 60 fps frame step: the KIDS frame task and frame-rate block | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md) | the game's own frame code; only the host's frame-step state page is shared. Fire Emblem: Three Houses and Taiko Risshiden V DX run on KTGL too, with other frame code |
 | `build` → `game` | frame step floor 2 → 1 vsync, and its frame step | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | the game's own clock floor and step |
+| `build` → `game` | present interval lock | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | the game's own per-frame present interval choice (main+0x69cc64..0x69cce4): a lock word replaces it |
 | `build` → `game` | render scale | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | the game's own view sizing function |
 
 ## Summary
@@ -87,7 +88,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Luigi's Mansion 3](#luigis-mansion-3) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Mario + Rabbids Kingdom Battle](#mario--rabbids-kingdom-battle) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 7 | 0 | 0 | 0 | 0 | `build` → `game` ×2 |
-| [Mario Kart World](#mario-kart-world) | 0 | 0 | 4 | 0 | 0 | `build` → `game` |
+| [Mario Kart World](#mario-kart-world) | 0 | 0 | 4 | 0 | 0 | `build` → `game` ×2 |
 | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
 | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
@@ -378,11 +379,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), `0400C3F00006E000`, [patches.py](../../dm/games/0400C3F00006E000/patches.py).
 
 - **`build` → `game`**, frame rate, blocked: frame-step stubs have no function-matched form yet, judgement: render scale. The game's own view sizing function
+- **`build` → `game`**, frame rate, blocked: frame-step stubs have no function-matched form yet, judgement: present interval lock. The game's own per-frame present interval choice (main+0x69cc64..0x69cce4): a lock word replaces it
 
-- **unregistered build** `d00e4f39…` ([patches.py:36](../../dm/games/0400C3F00006E000/patches.py#L36))
+- **unregistered build** `d00e4f39…` ([patches.py:32](../../dm/games/0400C3F00006E000/patches.py#L32))
   - frame step `+0x474a24`: dynamic resolution: the scaler gate opens at a host render scale
   - frame step `+0x474a48`: dynamic resolution: the view mask check is skipped at a host render scale
-  - frame step `+0x69ccf4`: present interval lock (DM_FPS_TARGET)
+  - frame step `+0x69ccf4`: present interval lock (DM_FPS_LOCK)
   - frame step `+0x25b6cbc`: dynamic resolution: the scaler stores the host render scale
   - render scale stub (the launcher offers DM_RENDER_SCALE)
 

@@ -120,7 +120,7 @@ SWITCH_BINDING = [
     ('enc_thread', '', {'what': 'Metal encoding on its own thread on the Mac', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
      'why': f'what iOS does for every game: {DEFAULT_SOON}'}),
     ('enc_thread_ios', '', {'what': 'Metal encoding on its own thread on the iPhone (on unless the profile says off)', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
-     'why': 'Mario Kart World holds a steadier, cooler 30 fps on an iPhone 16 Pro Max with the encode thread off (measured by the player)'}),
+     'why': 'the nxnative-mkw port measured a steadier, cooler 30 fps in Mario Kart World on an iPhone 16 Pro Max with it off'}),
     ('render_scale_ios', '', {'what': 'the render scale slider\'s default on the iPhone (a game with a render-scale stub)', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate',
      'why': 'what the phone generation can render at: Mario Kart World 1.8.0 at 80 % on 12 GB phones (the nxnative-mkw port\'s High preset)'}),
     ('present_snap', '', {'what': 'present snapshots', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'a setting the game was tested with: {DEFAULT_SOON}'}),

@@ -1,11 +1,7 @@
 # Mario Kart World (0400C3F00006E000): the rewriter's patches of this game's own builds. dm/tools/patch_nso.py loads every profile's patches.py and applies those of a module's NSO build ID;
-# FRAME_STEP as described there ("Registered patches"); this game's stub only scales its render size
+# FRAME_STEP as described there ("Registered patches"); this game's stubs scale its render size and lock its present interval. From the Thijs2004/nxnative-mkw port of this same build (1.8.0, v917504)
 from nso_asm import ADRP, B
 
-# Render scale (state +0x10, float written by the loader: DM_RENDER_SCALE, 1.0 by default). main+0x2f7cd0 sizes each render target of a view from the view's pixel size (view +0x50,
-# 1920.0 x 1080.0 in handheld) times the target's normalized rectangle; every 3D target (scene, half- and quarter-resolution effect layers, their depth) is sized there, and the viewports
-# follow the targets. The stub replaces the function's first load of that size (ldp s10,s9,[x0,#0x50], right after the prologue) and multiplies both extents by the factor; x16 and s16
-# are scratch at that point (s0..s7 hold the arguments). 1.0 or unset = the original size. Checked on the Mac 2026-11-02 at 2/3 (1280x720): races and menus full screen, the UI at 1080p
 def frame_step(ctx):
     here, emit, fs_site, fs_put, FS_STATE_OFF = ctx.here, ctx.emit, ctx.site, ctx.put, ctx.state
     # Render scale through the game's own dynamic-resolution path. main+0x474970 sizes a view: when a graphics-settings byte is 1 and the view's bit is set in the scaler's mask (main+0x474a20..0x474a48)
@@ -31,7 +27,7 @@ def frame_step(ctx):
     start2 = here()
     for i, w in enumerate((0xd503201f, 0xbd401610, 0x1e202208, 0x540000ed, 0x1e380208, 0x7100791f, 0x52800048, 0x52800030, 0x1a909108, 0xb9021668, 0x3908b27f, 0xd503201f)):
         emit(ADRP(16, here(), FS_STATE_OFF) if i == 0 else B(here(), 0x69ccf8) if i == 11 else w)
-    fs_put(0x69ccf4, [B(0x69ccf4, start2)], 'present interval lock (DM_FPS_TARGET)'); ctx.fps_lock = 1
+    fs_put(0x69ccf4, [B(0x69ccf4, start2)], 'present interval lock (DM_FPS_LOCK)'); ctx.fps_lock = 1
 
 FRAME_STEP = {'d00e4f399e411d0613aa8d26b1c02fef': frame_step}
 
@@ -39,5 +35,8 @@ FRAME_STEP = {'d00e4f399e411d0613aa8d26b1c02fef': frame_step}
 BINDING = [
     {'what': 'render scale', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
      'why': "the game's own view sizing function",
+     'blocked': 'frame-step stubs have no function-matched form yet'},
+    {'what': 'present interval lock', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': "the game's own per-frame present interval choice (main+0x69cc64..0x69cce4): a lock word replaces it",
      'blocked': 'frame-step stubs have no function-matched form yet'},
 ]
