@@ -112,6 +112,12 @@ def header(g):
         sys.exit(f"{g.id}: pso_gpu takes 1-4 whitespace-separated GPU architectures such as 'g18p applegpu_g19p' (each an optional applegpu_ prefix then an alphanumeric token; there is no none: omit the key for g18p with pso_mtl4 on, or no archive with pso_mtl4 off): {pg}")
     et = g.get('enc_thread', 'off')   # Metal encoding on its own thread on the Mac by default (nvn_rec.h rec_on; on iOS it is on for every game; DM_NVN_ENC_THREAD overrides): on / off
     if et not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread must be on or off: {et}')
+    eti = g.get('enc_thread_ios', 'on')   # the same on the iPhone (on by default; the nxnative-mkw port measured a steadier, cooler 30 fps in Mario Kart World on an iPhone 16 Pro Max with it off): on / off
+    if eti not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread_ios must be on or off: {eti}')
+    rsi = g.get('render_scale_ios', '1.0')   # the render scale slider's default on the iPhone (DM_RENDER_SCALE, settings.tsv; a game with a render-scale stub): 0.5 to 1.0
+    try: ok = 0.5 <= float(rsi) <= 1.0
+    except ValueError: ok = False
+    if not ok: sys.exit(f'{g.id}: render_scale_ios must be 0.5 to 1.0: {rsi}')
     cp = g.get('core_preempt', 'off')   # same-core preemption approximation (hle_thread.c): on / off
     if cp not in ('on', 'off'): sys.exit(f'{g.id}: core_preempt must be on or off: {cp}')
     aba = g.get('alloc_big_align', 'off')   # nn::mem::StandardAllocator::Allocate aligns blocks of 64 KB or more to 64 KB (hle_os.c; Vanillaware's memory pool storage): on / off
@@ -182,6 +188,8 @@ def header(g):
          f'#define DM_GAME_APP_POOL {g.int("app_pool"):#x}ull',
          f'#define DM_GAME_MEM_USED {int(g.get("mem_used", "0x4000000"), 0):#x}ull',   # used memory reported beside the heap (hle_svc.c GetInfo UsedMemorySize)
          f'#define DM_GAME_SYS_RESOURCE {int(g.get("sys_resource", "0x2000000"), 0):#x}ull',   # the NPDM's system resource size (hle_svc.c GetInfo TotalSystemResourceSize; 0 = no virtual address memory)
+         f'#define DM_GAME_PAD_SHOW_FILES {q(g.get("pad_show_files", ""))}',   # space-separated path substrings: a file opened whose path holds one marks play (the iPhone's on-screen controls show, DmGamepad.m / hle_fs.c)
+         f'#define DM_GAME_PAD_HIDE_FILES {q(g.get("pad_hide_files", ""))}',   # and one marks a menu (they hide, every touch goes to the game)
          f'#define DM_GAME_ARGS {q(g.get("game_args", ""))}',   # game arguments when the command line gives none (main.c; Octopath Traveler 0: Unreal's -SwitchVirtualAddressSpaceSize=)
          f'#define DM_GAME_ENV {q(g.get("game_env", ""))}',   # KEY=VALUE pairs getenv answers (hle_os.c; Absolum: .NET's DOTNET_GCRegionRange)
          f'#define DM_GAME_MEM_MAP_LIMIT {int(mml == "on")}',
@@ -197,6 +205,8 @@ def header(g):
          f'#define DM_GAME_PRESENT_SNAP {int(ps == "on")}',
          f'#define DM_GAME_PSO_MTL4 {int(p4 == "on")}',
          f'#define DM_GAME_ENC_THREAD {int(et == "on")}',
+         f'#define DM_GAME_ENC_THREAD_IOS {int(eti == "on")}',
+         f'#define DM_GAME_RENDER_SCALE_IOS {q(rsi)}',
          *([f'#define DM_GAME_SHARED_FONT_TTF {int(sf == "ttf")}'] if g.get('shared_font', '') else []),   # without the key the host decides by the SDK version (hle_sdk16.c)
          f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
          f'#define DM_GAME_PAD_STYLE {("classic", "mobile", "kart", "kartworld").index(pst)}',

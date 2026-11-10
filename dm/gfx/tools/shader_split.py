@@ -165,8 +165,15 @@ def bnsh_shaders(d, base, label):
 # A task shader's SPH says vertex and a mesh shader's domain (Mario Kart World: 7 task and 18 mesh shaders, read as vertex and domain shaders before)
 NVN2_STAGE = {5: 'cs', 6: 'ts', 7: 'ms'}
 def nvn2_stage(ctl, code):
-    if len(ctl) > 0x56 and ctl[0x56] in NVN2_STAGE: return NVN2_STAGE[ctl[0x56]]
+    # A compute stage byte over a code area that starts with an SPH is a graphics shader stored under a compute control: Mario Kart World 1.8.0's DrivePassShaderDefault BAHS program
+    # at 0xa1de4 (a 0x150-byte control section, the only one of its size) says compute at +0x56 but opens with a vertex SPH (word 0 0x020c0481) and loads and stores attributes; read as
+    # compute, its SPH was decoded as an instruction (opcode 0x481, which does not exist). Every real compute program (729 in that game) starts with an instruction, whose second
+    # quadword carries its scheduling control and is never zero; an SPH's is. Task and mesh (6, 7) keep their stage byte: their SPHs say vertex and domain
+    if len(ctl) > 0x56 and ctl[0x56] in NVN2_STAGE and not (ctl[0x56] == 5 and nvn2_sph(code)): return NVN2_STAGE[ctl[0x56]]
     return sph_stage(bytes(0x30) + code[:4]) if len(code) >= 4 else None
+
+def nvn2_sph(code):   # whether an NVN2 code area starts with a shader program header (SPH type 1 VTG or 2 PS in bits 0..4, a zero second quadword) rather than an instruction
+    return len(code) >= 16 and code[0] & 0x1f in (1, 2) and struct.unpack_from('<Q', code, 8)[0] == 0
 
 def bahs_shaders(d, label):
     rsz, region = field(d, '<II', 0x18, f'{label} BAHS header')

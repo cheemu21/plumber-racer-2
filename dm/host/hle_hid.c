@@ -802,7 +802,10 @@ HLE_FORCE("_ZN2nn3hid28ShowControllerFirmwareUpdateERKNS0_27ControllerFirmwareUp
 // the Mac's mouse, the iPhone touches no gamepad control takes, DM_KEYS taps) in handheld mode, as on the Switch, whose screen is out of reach when docked: a game may read touches
 // without checking the mode, so in console mode the state stays empty (only the header is written). Super Mario Galaxy's pointer is the touch screen in handheld mode
 int touch_fill_n(void *out, int max, uint64_t now_ns);
+static _Atomic uint32_t g_touch_reads;   // every read of the touch screen's state: a front end tells a game's menus (which read it) from its play (DmGamepad.m)
+uint32_t dm_touch_reads(void) { return atomic_load(&g_touch_reads); }
 static void touch_read(void *s, int n) {
+    atomic_fetch_add(&g_touch_reads, 1);
     keys_sync();   // DM_KEYS frame steps due in this frame (their touches), before the read
     if (dm_opmode() == 0) { touch_fill_n(s, n, now_ns()); return; }
     int64_t *p = s; p[0] = atomic_fetch_add(&g_sampling, 1) + 1; ((int32_t *)s)[2] = 0; ((int32_t *)s)[3] = 0;
@@ -900,3 +903,9 @@ PALMA_FAIL("_ZN2nn3hid37SetPalmaDataBaseIdentificationVersionERKNS0_21PalmaConne
 PALMA_FAIL("_ZN2nn3hid19SuspendPalmaFeatureERKNS0_21PalmaConnectionHandleERKNS_4util10BitFlagSetILi32ENS0_12PalmaFeatureEEE", "feature suspension", h_hid_PalmaSuspend, const void *h, const void *f)
 PALMA_FAIL("_ZN2nn3hid16ReadPalmaPlayLogERKNS0_21PalmaConnectionHandleERKt", "play log read", h_hid_PalmaLogRead, const void *h, const uint16_t *i)
 PALMA_FAIL("_ZN2nn3hid17ResetPalmaPlayLogERKNS0_21PalmaConnectionHandleERKt", "play log reset", h_hid_PalmaLogReset, const void *h, const uint16_t *i)
+
+// ---------- Switch 2 Joy-Con 2 mouse (SDK 21 Ounce builds, Mario Kart World) ----------
+// The host has no such devices: initialization succeeds, there are no handles and no states, so the game keeps to buttons and sticks
+HLE_FORCE("_ZN2nn3hid19EnableNmousePointerENS0_12NmouseHandleEb", "Joy-Con 2 mouse: none on the host", void, h_hid_NmouseEnable, uint64_t h, int on) { (void)h; (void)on; }
+HLE_FORCE("_ZN2nn3hid22SetNmousePointerRangesEii", "Joy-Con 2 mouse: none on the host", void, h_hid_NmouseRanges, int a, int b) { (void)a; (void)b; }
+HLE_FORCE("_ZN2nn3hid24SetNmousePointerPositionENS0_12NmouseHandleEii", "Joy-Con 2 mouse: none on the host", void, h_hid_NmousePos, uint64_t h, int x, int y) { (void)h; (void)x; (void)y; }

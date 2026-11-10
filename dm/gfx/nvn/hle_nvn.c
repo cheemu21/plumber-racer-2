@@ -1132,6 +1132,10 @@ NVN(nvnCommandBufferSetPolygonOffsetClamp, void, NVNcommandBuffer *c, float fa, 
 NVN(nvnCommandBufferDrawArrays, void, NVNcommandBuffer *c, NVNdrawPrimitive pr, int first, int n) { rec_draw(c, (p_draw){pr, first, n, 1, 0, 0}); }
 // Indirect: the {count, instances, first, base instance} record at ind is usually written by the GPU earlier in the frame (Hyrule Warriors: Age of Calamity's first battle), so the replay
 // issues a Metal indirect draw from the pool buffer instead of reading it at record or replay time (nvn_mtl.m draw)
+// The draws of the last presented frame, for a front end that tells the game's world from its menus by it (DmGamepad.m: Mario Kart World's kart controls hide in menus, where the game
+// draws about 150 to 300 a frame on the iPhone, and show while it draws its world, 1,200 and more)
+static _Atomic uint32_t g_world_draws;
+uint32_t dm_world_draws(void) { return atomic_load(&g_world_draws); }
 // NVN2 mesh draw: count task (or, with no task stage, mesh) workgroups from first, recorded as a draw of the replay's own primitive (nvn_obj.h NVN_PRIM_MESH), so the pass
 // planning sees a draw that needs the pass's depth and colour like any other. Mario Kart World's race pass draws with it
 NVN_NOPROTO(nvnCommandBufferDrawMeshTasks, void, NVNcommandBuffer *c, int first, int n) { if (n > 0) rec_draw(c, (p_draw){NVN_PRIM_MESH, first, n, 1, 0, 0}); }
@@ -2033,10 +2037,12 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
               // Visibility: during the time a long frame "comes out late", what stays on screen is the previous frame; if the previous frame was a loading screen (or this frame itself is one), all the player sees is the loading screen staying a bit longer, with no motion interrupted
               dm_longframe_note(b); } }
         uint64_t g0, g1; if (frame_rec() && mtl_gpu_span(f - 8, &g0, &g1)) { trow(f - 8, "@gpu_beg_ms", (g0 - g_t0_ns) / 1e6); trow(f - 8, "@gpu_end_ms", (g1 - g_t0_ns) / 1e6); } }
+    atomic_store(&g_world_draws, (uint32_t)(dr - prev_draw));
     prev_in = t0; prev_pass = ps; prev_draw = dr;
     dump_frame();
     if (g_frame % TWIN == 0) tsummary(g_frame);
     mtl_set_frame(g_frame);
+    { void dm_fps_movie_check(void); dm_fps_movie_check(); }   // the present interval lock back after a movie (loader.c)
     // Real-device semantics: present only enqueues and returns immediately; this frame's display time is scheduled by the pacer, and the texture can be acquired again only at "display time + one period" (blocking in AcquireTexture)
     uint64_t period = present_period(o), now = dm_detclock_enabled() ? guest_ns() : now_ns();
     g_hold_ring[o->presents % 16] = (uint8_t)present_itv(o);
@@ -2461,6 +2467,10 @@ NVN_NOPROTO(nvnQueueBuilderSetPrimaryQueue, void, NVNqueueBuilder *b, NVNqueue *
 
 // NVN2's Z-cull compression hint for 32-bit float depth: Metal's depth buffers keep their own compression, so there is nothing to set (Fire Emblem Fortune's Weave)
 NVN_NOPROTO(nvnCommandBufferSetZCullZF32CompressionEnable, void, NVNcommandBuffer *c, uint32_t on) { (void)c; (void)on; }
+// Variable rate shading (NVN2): accepted and ignored, as upstream does; every pixel is shaded where the game meant to save GPU time. Mario Kart World 1.8.0 calls these at boot
+NVN_NOPROTO(nvnCommandBufferBindShadingRateImage, void, NVNcommandBuffer *c, const void *view, const void *tex) { (void)c; (void)view; (void)tex; }
+NVN_NOPROTO(nvnCommandBufferShadingRateImagePalette, void, NVNcommandBuffer *c, int first, int n, const void *entries) { (void)c; (void)first; (void)n; (void)entries; }
+NVN_NOPROTO(nvnCommandBufferSetShadingRatePaletteMode, void, NVNcommandBuffer *c, int mode) { (void)c; (void)mode; }
 
 // ---------- Native images ----------
 // A decoded video picture as a texture (nn::gs::NativeImageHandle → nvnNativeImage → nvnTextureInitializeFromNativeImage; Fire Emblem Fortune's Weave's movies, main+0x1900da8, RGBA8). These are not in
@@ -2485,7 +2495,14 @@ HLE_FORCE("_Z22nvnNativeImageFinalizeP14NVNnativeImage", "native images are the 
 }
 HLE_FORCE("_Z35nvnTextureInitializeFromNativeImageP10NVNtextureP14NVNnativeImage", "a linear texture over the picture's memory", NVNboolean, h_ni_texture, NVNtexture *t, native_image_t *i) {
     uint8_t *mem; uint64_t size; uint32_t w, h, stride;
-    if (!dm_native_image(i->handle, &mem, &size, &w, &h, &stride)) { LOG("[RED] nvnTextureInitializeFromNativeImage: handle %#x names no picture", i->handle); return 0; }
+    if (!dm_native_image(i->handle, &mem, &size, &w, &h, &stride)) {
+        // Camera / GameChat images (Mario Kart World 1.8.0 makes three textures from them at boot and aborts if one fails, main+0xd32438): the host has none, so an empty 16x16
+        // RGBA8 texture of its own, never written (sampling gives black). From the Thijs2004/nxnative-mkw port
+        static int nr; if (nr++ < 4) LOG("nvnTextureInitializeFromNativeImage: handle %#x names no picture: an empty 16x16 texture", i->handle);
+        NVNtextureBuilder tb; h_nvnTextureBuilderSetDefaults(&tb); h_nvnTextureBuilderSetDevice(&tb, i->dev);
+        h_nvnTextureBuilderSetTarget(&tb, NVN_TEXTURE_TARGET_2D); h_nvnTextureBuilderSetFormat(&tb, NVN_FORMAT_RGBA8); h_nvnTextureBuilderSetSize2D(&tb, 16, 16);
+        return h_nvnTextureInitialize(t, &tb);
+    }
     if (!i->has_pool) {
         NVNmemoryPoolBuilder pb; h_nvnMemoryPoolBuilderSetDefaults(&pb); h_nvnMemoryPoolBuilderSetDevice(&pb, i->dev); h_nvnMemoryPoolBuilderSetStorage(&pb, mem, size);
         h_nvnMemoryPoolBuilderSetFlags(&pb, NVN_MEMORY_POOL_FLAGS_CPU_UNCACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED);

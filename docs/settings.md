@@ -4,7 +4,7 @@ The screen before the game starts shows the settings the game supports. A settin
 
 - [Tested defaults](#tested-defaults)
 - [Game](#game): [Frame rate](#frame-rate), [Render scale](#render-scale), [Console mode](#console-mode), [Upscaling](#upscaling), [Game language](#game-language), [Frame-rate counter](#frame-rate-counter)
-- [Controls](#controls): [Touch feedback](#touch-feedback), [Game rumble](#game-rumble), [Rumble strength](#rumble-strength), [Rumble cutoff](#rumble-cutoff)
+- [Controls](#controls): [Touch feedback](#touch-feedback), [On-screen controls](#on-screen-controls), [Tilt sensitivity](#tilt-sensitivity), [Flick for an item](#flick-for-an-item), [Game rumble](#game-rumble), [Rumble strength](#rumble-strength), [Rumble cutoff](#rumble-cutoff)
 - [Performance](#performance): [Frame buffering](#frame-buffering), [Metal 4 pipelines](#metal-4-pipelines), [Pipeline prebuild](#pipeline-prebuild), [Encode thread](#encode-thread), [Hold frames when late](#hold-frames-when-late), [Performance HUD](#performance-hud), [Reset to tested defaults](#reset-to-tested-defaults)
 - [The Mac settings window](#the-mac-settings-window): [Display mode](#display-mode)
 - [TV](#tv)
@@ -64,6 +64,20 @@ Shows the frames per second at the top left.
 ### Touch feedback
 
 A light tap from the phone when you press an on-screen button.
+
+### On-screen controls
+
+Mario Kart World only. **In races** (the default): the kart controls appear when the game loads a race and can be hidden in its menus with a two-finger double tap. The game reads the touch screen but acts on nothing in its menus (measured), so while the controls are hidden, gestures stand in for the buttons: a **tap** presses A, a **swipe** presses the D-pad in its direction, a **long press** (half a second) presses B. **Always**: the controls stay on screen. `DM_KART_TOUCH=1` in `env.txt` sends touches to the game's touch screen instead, for a game that takes them.
+
+A two-finger tap anywhere presses L and R together, for the title screen's "Press L + R" and the controller screens that ask for it, whether the controls are shown or hidden. A two-finger **double** tap shows or hides the controls by hand; the automatic rule takes over again at the game's next screen change.
+
+### Tilt sensitivity
+
+How far tilting the phone moves the game's motion controls (the phone's gyro stands in for the controller's while no controller supplies one): 50 to 200 %. Above 100 % a smaller tilt does more; the game's own motion-controls option must be on.
+
+### Flick for an item
+
+Mario Kart World only, on by default, while the kart controls are on screen: a sharp forward flick of the phone, its top edge dipping away from you, presses L, the item button; a backward flick, the top edge toward you, holds the stick down with it, which throws the item backwards. Steering tilts turn the phone about another axis and never count.
 
 ### Game rumble
 

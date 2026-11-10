@@ -43,7 +43,7 @@ Tested only on an iPhone 18 Pro (A20 Pro) in LiveContainer. The app needs the in
 
 ## Controls
 
-A touch layout for racing (`pad_style kartworld`): a floating steering stick, gas and brake pedals, drift (A + R), item (A + L), look back (X), rewind (D-pad down), the map (Y), and + / −. Sliding between gas, drift and item keeps A held. Charge jumps and tricks are on drift. Quick spins are gas and brake together. The camera (right stick) has no touch control; a connected controller is not tested.
+A touch layout for racing (`pad_style kartworld`): a floating steering stick, gas and brake pedals, drift (A + R), item (A + L), look back (X), rewind (D-pad down), the map (Y), and + / −. Sliding between gas, drift and item keeps A held. Charge jumps and tricks are on drift. Quick spins are gas and brake together. The camera (right stick) has no touch control; a connected controller is not tested. The kart controls show when the game loads a race (its RaceInfo and minimap layouts open: `pad_show_files`) and are hidden by a two-finger double tap in its menus (the launcher's **On-screen controls**, `DM_KART_PAD`: In races / Always). The game reads the touch screen 40 to 60 times a second but acts on no touch in its menus (measured on an iPhone 17 Pro, 2026-11-08: taps delivered as proper touch states changed nothing), so while the controls are hidden, gestures stand in for the buttons: a tap presses A, a swipe the D-pad in its direction, a long press B. Its main menu draws a whole world behind its panels (1,400 to 2,400 draws a frame, as a race) and every layout is preloaded at boot, so neither the draw count nor the files tell a menu from a race by themselves; the draw count only hides the controls at boot and on loading screens. `DM_KART_TOUCH=1` sends touches to the game's touch screen instead. A two-finger tap anywhere presses L and R together (the title screen's "Press L + R"); a two-finger double tap shows or hides the controls by hand. The phone's gyro drives the game's motion controls when no controller supplies one (turn them on in the game's settings; the launcher's **Tilt sensitivity**, `DM_MOTION_GAIN`, scales it), and a sharp forward flick of the phone presses L, the item button, and a backward flick down + L, the item thrown backwards, while the controls are shown (**Flick for an item**, `DM_FLICK_ITEM`; forward flicks measured at -4.7 to -6.5 rad/s about the picture's x axis, the threshold is 4.5).
 
 ## Status
 
@@ -81,8 +81,17 @@ The game stores its terrain tiles (260x260 R16 height, RG8 material, RGBA8 and R
 
 ## Movies
 
+- The 2560x1440 course-intro movie is VP9, decoded by libvpx on the host with 4 threads (2 fell behind on an iPhone: stutter and sound cut-outs, from the nxnative-mkw port).
 - The cup's pre-race movie is H.264 through the newer `Initialize…Decoder` with parameter sets and `Get…DecoderOutputBufferProperties` with a colour space (`hle_codec_video.c`); without them the game aborted on entering a cup.
 - The movie's frames go into an sRGB texture and its linear twin over the same storage. They were two Metal textures, so the presented one stayed on the first frame: an sRGB / linear pair now shares one texture through a view (`nvn_mtl.m`, `tex_mtl_`). The same fixed the missing textures of the title's movies.
+
+## Picture and frame rate on the iPhone
+
+Two code patches of this build ([`patches.py`](patches.py), from the [nxnative-mkw](https://github.com/Thijs2004/nxnative-mkw) port of the same build), both settings on the launcher's screen:
+
+- **Render scale** (`DM_RENDER_SCALE`, 0.5 to 1.0): the game's own dynamic-resolution scaler is opened at the host's factor, so every 3D view, viewport and derived pass follows by the game's design. The iPhone default is `render_scale_ios 0.80` in [`game.tsv`](game.tsv), that port's High preset for 12 GB phones (iPhone 17 Pro, Air); the UI stays at full size.
+- **Frame rate** (`DM_FPS_LOCK`, 30 / 60 / the game decides): the game picks its present interval every frame from how late the last one was and flips between 1 and 2 when it cannot keep 60, stepping its simulation per interval. The lock writes the interval itself. Measured on the Mac with the lock at 30: a flat 30.0 fps, no interval flips. The default is the game's own choice.
+- While a full-screen movie plays (a picture 1280 wide or more; the 640x360 clips the menus loop do not count) the lock is paused and comes back half a second after the last picture: with the lock the pre-race movie's sound cut out for about 10 ms every 0.74 s, each 32768-sample block arriving late ([Open](#open)).
 
 ## Memory
 
@@ -100,4 +109,5 @@ Releasing the packaged textures' guest copies (about 2 GB) gave magenta textures
 - 60 fps on the iPhone. For the first 53-70 s a race holds 60 fps with GPU p50 8 ms and the CPU at 4.7 GHz, about 4.2 W. Then, at similar draw counts, either the GPU takes 21 ms (about 38 fps, CPU 4.4 GHz, 2.1 W) or the CPU falls to 2.1 GHz with the GPU at 8 ms (about 46 fps); it can return to 60 fps for a while. A cold phone slows at the same time. Ruled out: `DM_NVN_BARRIER=game`, `DM_NVN_TBDR=1` (no change in traffic, about 415 MB loaded and 455 MB stored a frame), `DM_RT=0`. `DM_QOS_MAP=1` was reported with missing textures.
 - A margin in a race on courses other than Mario Bros. Circuit.
 - `DM_PRESENT_INTERVAL=display` in `Documents/env.txt` was reported to hold 60 fps, not yet measured in a log. It ignores the game's interval 2, and the game steps its simulation per interval, so a race may run too fast in those stretches. Not a default until that is checked.
+- Why the present interval lock makes the movie player's sound blocks arrive late is not known: the lock is paused during full-screen movies as a workaround (`hle_codec_video.c`, `loader.c`), and the 1280-pixel cutoff that tells a movie from a looping clip is this game's.
 - Frame rate in a race on the Mac: about 50 fps. Frames take about 12 ms of submit and present and 11-19 ms of GPU, and after a late one the game sets present interval 2 for a frame (`main+0x3aa0a4`, about 1,260 times in a 4-minute run).

@@ -48,6 +48,9 @@ void dm_set_game_image_header(const void *mh);
 typedef struct { uint32_t id; float x, y; } dm_touch;
 void dm_touch_set(const dm_touch *t, int n);
 void dm_touch_script(const dm_touch *t, int n);   // scripted touches (DM_KEYS, DM_CTL; hle_hid.c): as dm_touch_set, but never recorded by DM_REC
+int dm_pad_hint(void);   // 1 = the game opened a file of its play (the profile's pad_show_files), 2 = of a menu (pad_hide_files), 0 = neither yet (hle_fs.c): the on-screen controls follow it
+uint32_t dm_touch_reads(void);   // the game's reads of the touch screen state so far (hle_hid.c): a menu reads it, play may not
+uint32_t dm_world_draws(void);   // the draws of the last presented frame (hle_nvn.c): a front end hides a racing game's controls in its menus by it (DmGamepad.m)
 
 // Save not written (called by the host's hle_fs.c; the iOS front end provides a strong implementation of the same name that shows the native prompt "Not enough storage. Progress was not saved"; the default weak implementation only logs).
 // Timing: when a save write fails (disk full etc.) within one of the game's save transactions (between two Commits), so that this Commit is refused and the previously committed save is unchanged, it is called once per refused transaction;
