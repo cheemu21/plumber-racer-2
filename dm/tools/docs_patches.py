@@ -127,6 +127,8 @@ SWITCH_BINDING = [
     ('shader_key_skip', '', {'what': 'control-section bytes left out of shader keys', 'now': 'game', 'goal': 'game', 'purpose': 'shaders',
      'why': "the engine shares one control section among shaders; leaving GLSLC's compile information out of every game's keys would change every shader key"}),
     ('ue_texture_pool', '', {'what': "Unreal's texture streaming pool", 'now': 'game', 'goal': 'game', 'purpose': 'memory', 'why': "the game's own budget, raised to its Windows value"}),
+    ('screen_shape', 'fill', {'what': 'the game renders at the screen\'s shape', 'now': 'game', 'goal': 'game', 'purpose': 'picture', 'why': 'a stub of the game\'s patches.py sizes its picture by the shape; the host only writes it'}),
+    ('frame_caps', '', {'what': 'a present rate in the launcher', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'the host only paces presents: right only for a game that keeps its own speed at those rates, which its note shows'}),
     ('present_interval', '', {'what': 'one frame per display tick', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'right only for games whose logic does not count frames'}),
     ('fps_hold', '', {'what': 'no frame held past the cap', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's pacing"}),
     ('fps_target', '', {'what': 'frame rate target', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'a choice per game'}),

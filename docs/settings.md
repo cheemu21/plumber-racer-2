@@ -3,9 +3,9 @@
 The screen before the game starts shows the settings the game supports. A setting that only matters while another is on appears under it and disappears when that one is turned off. Tap **Play** to start; the app remembers your choices for the next start. All settings are on one scrollable screen, under **Game**, **Controls** and **Performance**. Tap a menu or move a slider there; no settings page needs opening. **Upscaling** is in **Game**, beside **Console mode**. A Mac app shows the same settings in a [window of its own](#the-mac-settings-window).
 
 - [Tested defaults](#tested-defaults)
-- [Game](#game): [Frame rate](#frame-rate), [Render scale](#render-scale), [Console mode](#console-mode), [Upscaling](#upscaling), [Game language](#game-language), [Frame-rate counter](#frame-rate-counter)
+- [Game](#game): [Frame rate](#frame-rate), [Frame rate cap](#frame-rate-cap), [Picture shape](#picture-shape), [Render scale](#render-scale), [Console mode](#console-mode), [Upscaling](#upscaling), [Game language](#game-language), [Frame-rate counter](#frame-rate-counter)
 - [Controls](#controls): [Touch feedback](#touch-feedback), [Game rumble](#game-rumble), [Rumble strength](#rumble-strength), [Rumble cutoff](#rumble-cutoff)
-- [Performance](#performance): [Frame buffering](#frame-buffering), [Metal 4 pipelines](#metal-4-pipelines), [Pipeline prebuild](#pipeline-prebuild), [Encode thread](#encode-thread), [Hold frames when late](#hold-frames-when-late), [Performance HUD](#performance-hud), [Reset to tested defaults](#reset-to-tested-defaults)
+- [Performance](#performance): [Frame buffering](#frame-buffering), [Metal 4 pipelines](#metal-4-pipelines), [Pipeline prebuild](#pipeline-prebuild), [Encode thread](#encode-thread), [Texture memory](#texture-memory), [Hold frames when late](#hold-frames-when-late), [Performance HUD](#performance-hud), [Reset to tested defaults](#reset-to-tested-defaults)
 - [The Mac settings window](#the-mac-settings-window): [Display mode](#display-mode)
 - [TV](#tv)
 - [Settings in a file](#settings-in-a-file)
@@ -24,9 +24,17 @@ A Mac app carries the same list (`Contents/Resources/dm/launcher.json`), without
 
 Games whose speed the app controls (Breath of the Wild, Tears of the Kingdom and a few others) offer **30 fps** or **60 fps**. 60 is smoother; 30 is what the Switch ran and uses less power, so the phone stays cooler and the battery lasts longer. The game runs at real speed either way.
 
+### Frame rate cap
+
+Games whose own frame loop keeps their speed at any frame rate (Mario Kart World) offer **30**, **40**, **45** or **60 fps** in place of the Frame rate setting. A lower cap uses less power and leaves more time for each frame. On a 120 Hz screen 40 fps is perfectly even; 45 fps alternates between two frame lengths there, and on a 60 Hz screen 40 and 45 fps both do. Motion is smoothest at 30 and 60, as those are whole numbers of the game's own time steps.
+
+### Picture shape
+
+**Fill the screen** (the default) draws the game's 3D view at the shape of your screen: about 19.5:9 on an iPhone 18 Pro, 4:3 on an iPad, the window's shape on a Mac. It shows more of the scene to the sides (or above and below on a narrower screen) with nothing stretched. The HUD and menus stay the size and shape they have at 16:9, in the middle of the screen. **16:9** draws the game as on the Switch, with black bars. Only games the app can widen offer it (Mario Kart World). The game takes the shape when it starts: on a Mac, a window resized later shows that shape with bars.
+
 ### Render scale
 
-The size of the 3D picture, from 50 to 100 %. Below 100 % the size is fixed there and the game's own dynamic resolution is off; 100 % keeps the game's own. Lower can be lighter on the GPU but is blurrier; the HUD and text keep their sharpness. Only games the app can scale offer it.
+The size of the 3D picture, from 50 to 100 %. Below 100 % the size is fixed there and the game's own dynamic resolution is off; 100 % keeps the game's own. Lower can be lighter on the GPU but is blurrier; the HUD and text keep their sharpness. Only games the app can scale offer it. A game may name its sizes instead of a slider: Mario Kart World's **Graphics preset** is **Ultra Potato** (25 %), **Potato** (50 %), **Default** (75 %) or **High** (100 %).
 
 ### Console mode
 
@@ -151,6 +159,12 @@ The app turns the game's graphics commands into Metal commands on a thread of it
 
 - **When to change it:** leave it on unless a game misbehaves with it; turning it off is a diagnostic step.
 
+### Texture memory
+
+For games whose large textures the app keeps without their finest detail level to fit the phone's memory (Mario Kart World). **Standard** drops one level: a large texture takes a quarter of its memory. **Low** drops a second level from the largest textures (1024x512 and up): a sixteenth, so the game needs less memory again, and those textures look blurrier up close.
+
+- **When to change it:** choose Low on a phone with less memory (8 GB or less) if the game is closed by the system in a race, or to leave room for other apps.
+
 ### Hold frames when late
 
 For games whose frame rate the app controls ([Frame rate](#frame-rate)). With 60 fps chosen, each frame is meant to stay on screen for one refresh. When a frame comes late, the app can either slow the game down to 30 fps for a while, or keep 60 and show late frames as they come.
@@ -218,7 +232,9 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under 
 | Setting | Variable | Values |
 |---|---|---|
 | Frame rate | `DM_FPS_TARGET` | `30`, `60` |
-| Render scale | `DM_RENDER_SCALE` | `0.5` to `1.0` |
+| Frame rate cap | `DM_PRESENT_HZ` | `30`, `40`, `45`, `60` |
+| Picture shape | `DM_ASPECT` | `auto` (fill the screen), `16:9`, or a shape such as `19.5:9`, `2556x1179` or `2.17` |
+| Render scale | `DM_RENDER_SCALE` | `0.25` to `1.0`; the slider goes from `0.5` |
 | Console mode | `DM_OPMODE` | `1` docked, `0` handheld |
 | Game language | `DM_LANG` | a language code, such as `ja` |
 | Display mode (Mac) | `DM_FULLSCREEN` | `1` fullscreen, `0` a window |
@@ -233,6 +249,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under 
 | Metal 4 pipelines | `DM_PSO_MTL4` | `1`, `0` |
 | Pipeline prebuild | `DM_PSO_PREBUILD` | `1`, `0` |
 | Encode thread | `DM_NVN_ENC_THREAD` | `1`, `0` |
+| Texture memory | `DM_NVN_TEX_SOFT` | `1` standard, `2` low, `0` every level kept |
 | Hold frames when late | `DM_FPS_HOLD` | `on`, `off` |
 | Performance HUD | `DM_METAL_HUD` | `1`, `0` |
 

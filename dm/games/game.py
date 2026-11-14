@@ -95,6 +95,11 @@ def header(g):
     vers = ', '.join('{' + q(b['main']) + ', ' + q(b['display']) + '}' for b in g.builds().values() if 'main' in b)
     pi = g.get('present_interval', 'game')   # present interval: game = as the game sets it (as on the Switch), display = one frame per display tick
     if pi not in ('game', 'display'): sys.exit(f'{g.id}: present_interval must be game or display: {pi}')
+    fc = g.get('frame_caps', 'off')   # the launcher offers a present rate (DM_PRESENT_HZ): for a game whose own loop keeps its speed at any rate (its note says how), in display mode
+    if fc not in ('on', 'off'): sys.exit(f'{g.id}: frame_caps must be on or off: {fc}')
+    if fc == 'on' and pi != 'display': sys.exit(f'{g.id}: frame_caps needs present_interval display')
+    ss = g.get('screen_shape', '16:9')   # fill = the game renders at the screen's or window's shape (a stub of its patches.py reads it, state +0x14; loader.c dm_fps_state_apply), 16:9 = as on the Switch
+    if ss not in ('16:9', 'fill'): sys.exit(f'{g.id}: screen_shape must be 16:9 or fill: {ss}')
     ft = g.get('fps_target', '0')   # frame rate cap of the rewriter's frame step (FRAME_STEP in the profile's patches.py: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0) or of the engine's own frame limit (hle_fpslock.c): 0 = the game's own step, 30 / 60
     if ft not in ('0', '30', '60'): sys.exit(f'{g.id}: fps_target must be 0, 30 or 60: {ft}')
     fh = g.get('fps_hold', 'on')   # whether the frame step may hold a frame longer than the cap's vsyncs when frames come late (hle_nvn.c fstep_tick): on / off
@@ -188,6 +193,8 @@ def header(g):
          f'#define DM_GAME_STDALLOC_CAP {int(g.get("stdalloc_cap", "0"), 0):#x}ull',   # StandardAllocator's address space with virtual address memory (hle_svc.c); 0 = what the alias region has room for
          f'#define DM_GAME_DISPLAY_VERSIONS {vers}',
          f'#define DM_GAME_PRESENT_DISPLAY {int(pi == "display")}',
+         f'#define DM_GAME_FRAME_CAPS {int(fc == "on")}',
+         f'#define DM_GAME_SCREEN_FILL {int(ss == "fill")}',
          f'#define DM_GAME_CORE_PREEMPT {int(cp == "on")}',
          f'#define DM_GAME_ALLOC_BIG_ALIGN {int(aba == "on")}',
          f'#define DM_GAME_FPS_TARGET {int(ft)}',

@@ -48,23 +48,47 @@ int dm_guest_as_contains(uintptr_t a) { uintptr_t b = (uintptr_t)g_as; return g_
 // (default DM_TEMP's). With less than 4 GB free there, or when the file cannot be made, the block stays anonymous
 // A game's large pools must not get zero-copy buffers on iOS: a buffer's whole range is read into memory and wired when it goes into the residency set, and over file pages that froze
 // Mario Kart World for over a minute on an iPhone 18 Pro at its 2.4 GB main pool (anonymous: under a second) and took 16 s for a 7 MB pool on a Mac short of memory
-static int g_memfd = -1;
-int dm_guest_file_backed(void) { return g_memfd >= 0; }   // nvn_dirty.c nvn_dirty_release: nothing to give back
-static int mem_file_open(size_t size) {
+// The block lies in files of DM_MEM_FILE_CHUNK bytes (default 1 GB, at least 64 MB; the last holds the rest), as nxnative's guest files do (865cc35f): the stall at the
+// system's periodic flush of a shared file grows with the file, and one file of the whole block (Mario Kart World: about 13 GB) froze a Mac race at frame 4,500 under memory
+// pressure with the process stuck in the kernel (2026-11-14). Any failure leaves the whole block anonymous
+enum { MF_MAX = 64 };
+static int g_mf_fd[MF_MAX], g_mf_n; static size_t g_mf_chunk;
+int dm_guest_file_backed(void) { return g_mf_n > 0; }   // nvn_dirty.c nvn_dirty_release: nothing to give back
+static int mem_file_on(char *dir, size_t ndir) {
     const char *e = getenv("DM_MEM_FILE"); int on = e && *e ? atoi(e) != 0 : DM_GAME_MEM_FILE;
-    if (!on) return -1;
-    char dir[1024], path[1100]; const char *d = getenv("DM_MEM_FILE_DIR"); if (!d || !*d) d = getenv("DM_TEMP");
-    if (d && *d) snprintf(dir, sizeof dir, "%s", d); else if (!confstr(_CS_DARWIN_USER_TEMP_DIR, dir, sizeof dir)) snprintf(dir, sizeof dir, "/tmp");
+    if (!on) return 0;
+    const char *d = getenv("DM_MEM_FILE_DIR"); if (!d || !*d) d = getenv("DM_TEMP");
+    if (d && *d) snprintf(dir, ndir, "%s", d); else if (!confstr(_CS_DARWIN_USER_TEMP_DIR, dir, ndir)) snprintf(dir, ndir, "/tmp");
     mkdir(dir, 0700);
     struct statfs fs; uint64_t avail = statfs(dir, &fs) ? 0 : (uint64_t)fs.f_bavail * fs.f_bsize;
-    if (avail < (4ull << 30)) { LOG("[RED] guest memory: %llu MB free in %s, under 4 GB: anonymous memory, all of it in the footprint", (unsigned long long)(avail >> 20), dir); return -1; }
-    snprintf(path, sizeof path, "%s/guest_memory.%d", dir, (int)getpid());
-    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) { LOG("[RED] guest memory: %s not made (errno %d): anonymous memory", path, errno); return -1; }
-    unlink(path);
-    if (ftruncate(fd, (off_t)size)) { LOG("[RED] guest memory: file of %#zx bytes refused (errno %d): anonymous memory", size, errno); close(fd); return -1; }
-    LOG("guest memory: a shared mapping of an unlinked file in %s (%llu MB free there): out of the footprint, paged to the file under memory pressure", dir, (unsigned long long)(avail >> 20));
-    return fd;
+    if (avail < (4ull << 30)) { LOG("[RED] guest memory: %llu MB free in %s, under 4 GB: anonymous memory, all of it in the footprint", (unsigned long long)(avail >> 20), dir); return 0; }
+    return 1;
+}
+// Maps the reserved block (g_as, g_reserve, PROT_NONE anonymous) over the files: 1 when done, 0 with the block anonymous again
+static int mem_file_map(const char *dir) {
+    size_t chunk = (size_t)1 << 30; const char *c = getenv("DM_MEM_FILE_CHUNK");
+    if (c && *c) { char *end; double v = strtod(c, &end); size_t m = *end == 'G' || *end == 'g' ? 1u << 30 : *end == 'M' || *end == 'm' ? 1u << 20 : 1; chunk = (size_t)(v * m) & ~(size_t)0xfffff; }
+    if (chunk < ((size_t)64 << 20)) chunk = (size_t)64 << 20;
+    if ((g_reserve + chunk - 1) / chunk > MF_MAX) chunk = ((g_reserve + MF_MAX - 1) / MF_MAX + 0xfffff) & ~(size_t)0xfffff;
+    int n = (int)((g_reserve + chunk - 1) / chunk), k = 0;
+    for (; k < n; k++) {
+        char path[1200]; snprintf(path, sizeof path, "%s/guest_memory.%d.%d", dir, (int)getpid(), k);
+        size_t sz = k == n - 1 ? g_reserve - (size_t)k * chunk : chunk;
+        int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+        if (fd < 0) { LOG("[RED] guest memory: %s not made (errno %d): anonymous memory", path, errno); break; }
+        unlink(path);
+        if (ftruncate(fd, (off_t)sz)) { LOG("[RED] guest memory: file %d of %#zx bytes refused (errno %d): anonymous memory", k, sz, errno); close(fd); break; }
+        if (mmap(g_as + (size_t)k * chunk, sz, PROT_NONE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED) { LOG("[RED] guest memory: file %d mapping refused (errno %d): anonymous memory", k, errno); close(fd); break; }
+        g_mf_fd[k] = fd;
+    }
+    if (k < n) {
+        for (int i = 0; i < k; i++) close(g_mf_fd[i]);
+        if (mmap(g_as, g_reserve, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0) == MAP_FAILED) die("guest AS: anonymous again");
+        return 0;
+    }
+    g_mf_n = n; g_mf_chunk = chunk;
+    LOG("guest memory: %d shared mappings of unlinked files of %zu MB in %s (DM_MEM_FILE_CHUNK): out of the footprint, paged to the files under memory pressure", n, chunk >> 20, dir);
+    return 1;
 }
 static void *alias_windows_thread(void *arg);
 static void *regions_thread(void *arg);
@@ -80,10 +104,9 @@ static void mem_init_once(void) {
     size_t alias = DM_GAME_MEM_ALIAS; const char *as = getenv("DM_ALIAS_SIZE");
     if (as && *as) { alias = (size_t)strtoull(as, NULL, 0); if (alias < 0x10000000 || (alias & (pg - 1))) die("DM_ALIAS_SIZE %s: at least 256 MB, in whole host pages", as); }
     g_reserve = RESERVE - DM_GAME_MEM_ALIAS + alias;
-    g_memfd = mem_file_open(g_reserve);
-    if (g_memfd >= 0 && (g_as = mmap(NULL, g_reserve, PROT_NONE, MAP_SHARED, g_memfd, 0)) == MAP_FAILED) { LOG("[RED] guest memory: file mapping refused (errno %d): anonymous memory", errno); close(g_memfd); g_memfd = -1; }
-    if (g_memfd < 0) g_as = mmap(NULL, g_reserve, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    g_as = mmap(NULL, g_reserve, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (g_as == MAP_FAILED) die("reserve guest AS");
+    { char mdir[1024]; if (mem_file_on(mdir, sizeof mdir)) mem_file_map(mdir); }
     // Fixed partition (all inside the reserved block): alias 2.875 GB, stack 256 MB, heap the remaining 1.625 GB.
     // In newer SDKs the AddressRegionManager always takes 0x3fe00000 (~1 GB) at the start of the alias region as its node area (sdk 0x134728) before handing out regions; with a 512 MB alias region the very first AllocateAddressRegion fails (0x1803).
     // SMBW also defines a 1792000 KB (1.75 GB) VirtualAddressMemory in HeapDef (System/HeapSize): it is subtracted from the memory pool before the heap is opened (SetHeapSize asks for only 0x5be00000),
@@ -98,7 +121,7 @@ static void mem_init_once(void) {
     LOG("guest AS %p +%#llx  heap %p alias %p stack %p", g_as, (unsigned long long)g_reserve, g_heap, g_alias, g_stack);
     const char *aw = getenv("DM_ALIAS_WINDOWS");
     if (aw && atoi(aw) > 0) { pthread_t th; if (!pthread_create(&th, NULL, alias_windows_thread, (void *)(uintptr_t)atoi(aw))) pthread_detach(th); }
-    if (DM_GAME_ZERO_RELEASE && g_memfd < 0) { pthread_t th; if (!pthread_create(&th, NULL, zero_sweep_thread, NULL)) pthread_detach(th); }
+    if (DM_GAME_ZERO_RELEASE && !g_mf_n) { pthread_t th; if (!pthread_create(&th, NULL, zero_sweep_thread, NULL)) pthread_detach(th); }
     const char *rf = getenv("DM_REGIONS");
     if (rf && *rf) { pthread_t th; if (!pthread_create(&th, NULL, regions_thread, (void *)rf)) pthread_detach(th); }
 }
@@ -282,10 +305,14 @@ static void *zero_sweep_thread(void *arg) {
     return NULL;
 }
 static int guest_release(uintptr_t lo, uintptr_t hi) {
-    if (g_memfd >= 0) {   // mem_file: a hole in the file. Pages a no-copy buffer holds stay as they are, bytes and all (measured): then the range is not fresh
+    if (g_mf_n) {   // mem_file: a hole in each file the range covers. Pages a no-copy buffer holds stay as they are, bytes and all (measured): then the range is not fresh
         if (mprotect((void *)lo, hi - lo, PROT_NONE)) die("guest_release mprotect %#lx+%#lx errno=%d", (unsigned long)lo, (unsigned long)(hi - lo), errno);
-        fpunchhole_t ph = {0, 0, (off_t)(lo - (uintptr_t)g_as), (off_t)(hi - lo)};
-        if (fcntl(g_memfd, F_PUNCHHOLE, &ph)) { static _Atomic int nred; if (atomic_fetch_add(&nred, 1) < 8) LOG("[RED] guest memory %#lx+%#lx: no hole punched (errno %d): it keeps its bytes", (unsigned long)lo, (unsigned long)(hi - lo), errno); return 0; }
+        for (uintptr_t a = lo; a < hi; ) {
+            size_t off = a - (uintptr_t)g_as, k = off / g_mf_chunk, in = off - k * g_mf_chunk, left = g_mf_chunk - in; if (left > hi - a) left = hi - a;
+            fpunchhole_t ph = {0, 0, (off_t)in, (off_t)left};
+            if (fcntl(g_mf_fd[k], F_PUNCHHOLE, &ph)) { static _Atomic int nred; if (atomic_fetch_add(&nred, 1) < 8) LOG("[RED] guest memory %#lx+%#lx: no hole punched (errno %d): it keeps its bytes", (unsigned long)lo, (unsigned long)(hi - lo), errno); return 0; }
+            a += left;
+        }
         size_t pg = (size_t)getpagesize(), n = (hi - lo) / pg; char v[256];
         for (size_t i = 0; i < n; i += sizeof v) { size_t k = n - i < sizeof v ? n - i : sizeof v;
             if (mincore((void *)(lo + i * pg), k * pg, v)) return 0;

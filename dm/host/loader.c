@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <limits.h>
+#include <math.h>
 #include <mach-o/getsect.h>
 #include <mach-o/ldsyms.h>
 #include "hle.h"
@@ -293,6 +294,25 @@ static void install_fps_state(module_t *m) {
     if (m->fps_state_off + 0x40 > m->size || m->fps_state_off < m->key_page_off + m->key_page_size) die("%s: frame step state page out of range", m->name);
     dm_fps_state = m->base + m->fps_state_off; g_fps_mod = m->name;
 }
+// Screen shape (profile screen_shape fill; state +0x14, a float width / height that a stub of the profile's patches.py reads when the game sizes its picture, Mario Kart World's main+0xc10408):
+// DM_ASPECT = auto (the default: the screen's or window's shape, front_screen_aspect), 16:9 (the game's own), W:H, WxH or a ratio. 0 in the page = the game's 16:9, also within 0.5 % of it.
+// dm_screen_shape keeps it for the front ends, which size the game's view to it (iOS; the present fits the picture to the drawable on both). The game reads it once, at boot
+float dm_screen_shape;
+__attribute__((weak)) double front_screen_aspect(void) { return 0; }   // front_mac.m, front_ios.m; 0 = not known
+__attribute__((weak)) void front_screen_shape_changed(void) {}         // front_ios.m: lays the game's view out again
+static void screen_shape_apply(void) {
+    if (!DM_GAME_SCREEN_FILL) { if (getenv("DM_ASPECT")) LOG("DM_ASPECT ignored: the game profile renders at 16:9 (no screen_shape fill)"); return; }
+    const char *e = getenv("DM_ASPECT"); double a = 0, w, h; char sep;
+    if (!e || !*e || !strcmp(e, "auto")) a = front_screen_aspect();
+    else if (!strcmp(e, "16:9") || !strcmp(e, "off") || !strcmp(e, "0")) a = 0;
+    else if (sscanf(e, "%lf%c%lf", &w, &sep, &h) == 3 && (sep == ':' || sep == 'x') && w > 0 && h > 0) a = w / h;
+    else { char *end; a = strtod(e, &end); if (end == e || *end) a = -1; }
+    if (a != 0 && !(a >= 1.0 && a <= 4.0)) { LOG("[RED] DM_ASPECT=%s: auto, 16:9, W:H, WxH or a ratio from 1 to 4; keeping the game's 16:9", e); a = 0; }
+    if (a && fabs(a * 9 / 16 - 1) < 0.005) a = 0;
+    float f = (float)a; memcpy(dm_fps_state + 0x14, &f, sizeof f); dm_screen_shape = f;
+    if (a) LOG("%s: the game renders at the shape %.4f (%.2f:9, %s)", g_fps_mod, a, a * 9, e ? "DM_ASPECT" : "the screen's"); else LOG("%s: the game renders at its own 16:9 (%s)", g_fps_mod, e ? "DM_ASPECT" : "the screen's shape");
+    front_screen_shape_changed();
+}
 // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
 // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
 void dm_fps_state_apply(void) {
@@ -301,10 +321,11 @@ void dm_fps_state_apply(void) {
     if (t != 0 && t != 30 && t != 60) { LOG("[RED] DM_FPS_TARGET=%s: must be 0, 30 or 60; using the game's own frame step", e); t = 0; }
     float f = (float)t; memcpy(dm_fps_state, &f, sizeof f);
     // Render scale of the 3D views (the stubs at Tears of the Kingdom's main+0xd5cc0, Breath of the Wild's main+0x1266880): 1.0 keeps the game's own size and dynamic resolution;
-    // another factor fixes the size at that fraction (DM_RENDER_SCALE, 0.5 to 1.0). Independent of the frame step: written at target 0 too
+    // another factor fixes the size at that fraction (DM_RENDER_SCALE, 0.25 to 1.0). Independent of the frame step: written at target 0 too
     const char *rs = getenv("DM_RENDER_SCALE"); float sc = 1.0f;
-    if (rs) { char *end; sc = strtof(rs, &end); if (end == rs || *end || !(sc >= 0.5f && sc <= 1.0f)) { LOG("[RED] DM_RENDER_SCALE=%s: must be 0.5 to 1.0; keeping the game's size", rs); sc = 1.0f; } else LOG("%s: 3D views rendered at %.2f of the game's size (DM_RENDER_SCALE)", g_fps_mod, sc); }
+    if (rs) { char *end; sc = strtof(rs, &end); if (end == rs || *end || !(sc >= 0.25f && sc <= 1.0f)) { LOG("[RED] DM_RENDER_SCALE=%s: must be 0.25 to 1.0; keeping the game's size", rs); sc = 1.0f; } else LOG("%s: 3D views rendered at %.2f of the game's size (DM_RENDER_SCALE)", g_fps_mod, sc); }
     memcpy(dm_fps_state + 0x10, &sc, sizeof sc);
+    screen_shape_apply();
     char cap[32]; snprintf(cap, sizeof cap, ", capped at %d fps", t);
     LOG("%s: frame step %s%s (%s)", g_fps_mod, !t ? "as the game sets it" : "in whole vsyncs decided by the host", t ? cap : "", e ? "DM_FPS_TARGET" : "game profile fps_target");
 }

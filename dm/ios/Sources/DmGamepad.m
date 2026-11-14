@@ -27,6 +27,7 @@
 #include "motion_fusion.h"
 #include "pad_apple.h"
 #include "pad_slots.h"
+extern float dm_screen_shape;   // loader.c: the shape the game renders at (0 = 16:9)
 #include <stdatomic.h>
 
 enum { B_A = 0, B_B, B_X, B_Y, B_LS, B_RS, B_L, B_R, B_ZL, B_ZR, B_PLUS, B_MINUS, B_LEFT, B_UP, B_RIGHT, B_DOWN, B_N };
@@ -461,12 +462,13 @@ static CGRect around(CGPoint c, CGFloat w, CGFloat h) { return CGRectMake(c.x - 
     if (changed || stick || _stickShown) [self refresh];   // also refresh on the stick release so the knob returns to the centre
     _stickShown = stick;
 }
-// Touches no control takes (all of them while a physical controller is connected) go to the game's touch screen, normalized on the 16:9 picture that front_ios.m
+// Touches no control takes (all of them while a physical controller is connected) go to the game's touch screen, normalized on the picture (16:9, or the game's shape) that front_ios.m
 // centres in the screen: Super Mario Galaxy's pointer in handheld mode (profile op_mode). The host reports them only in handheld mode, as on the Switch (hle_hid.c touch_read)
 - (void)pushGame {
     CGRect b = self.bounds; CGFloat w = b.size.width, h = b.size.height;
     if (w <= 0 || h <= 0) return;
-    if (w / h > 16.0 / 9.0) w = h * 16.0 / 9.0; else h = w * 9.0 / 16.0;
+    CGFloat a = dm_screen_shape > 0 ? dm_screen_shape : 16.0 / 9.0;   // the game's picture: 16:9, or the screen's shape (screen_shape fill)
+    if (w / h > a) w = h * a; else h = w / a;
     CGFloat x0 = (b.size.width - w) / 2, y0 = (b.size.height - h) / 2;
     dm_touch t[16]; int n = 0;
     for (int i = 0; i < 16; i++) if (_game[i]) {

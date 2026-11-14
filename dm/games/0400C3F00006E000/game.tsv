@@ -44,6 +44,21 @@ shader_note	Mario Kart World shaders
 # agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza (its game note): the same engine here, so they are evaluated from the start
 render_cond	on
 
+# ---- Frame rate and render scale (the game note's Frame rate) ----
+# sead's frame loop advances game time by whole 60 Hz steps from the measured frame time (main+0x3a9e28), so the game keeps its speed at any present rate from 30 to 60 fps
+present_interval	display
+frame_caps	on
+render_presets	0.25=Ultra Potato,0.5=Potato,0.75=Default,1.0=High
+
+# ---- Dynamic resolution (the game note's Frame rate) ----
+# agl's dynamic resolution times the GPU as the difference of timestamp reports in one submission, as in Donkey Kong Bananza (same engine): with one time for the whole submission it reads
+# about 0 and never steps down. Each report takes its segment's GPU start / end, less the GPU's idle gaps between segments (nxnative #1229, #1350): the scene steps down when the GPU is over budget
+gpu_timestamps	segment
+
+# ---- Screen shape (the game note's Screen shape) ----
+# The stub in patches.py widens the game's resolution table to the screen's or window's shape (DM_ASPECT): its cameras and HUD layout follow the table
+# screen_shape fill is off (2026-11-14): the 3D and the HUD drew stretched at wider shapes (README Screen shape); the game renders its own 16:9
+
 # ---- Operation mode ----
 # The user plays this port handheld at 60 fps (the iPhone, and the Mac for testing): the game starts in handheld mode
 op_mode	handheld

@@ -35,6 +35,21 @@ static int g_input_on = 1;   // main thread: the game window is key, so its keyb
 void *front_metal_layer(void) { return (__bridge void *)g_layer; }
 static _Atomic int g_screen_fps;   // the window's screen's maximumFramesPerSecond, kept up to date when the window moves to another screen
 int front_screen_max_fps(void) { return g_screen_fps; }
+// The window's first size in points (DM_WINDOW_SIZE=<W>x<H>, from 320x180; 1280x720 by default)
+static NSSize window_size(void) {
+    const char *e = getenv("DM_WINDOW_SIZE"); int w, h;
+    if (e && sscanf(e, "%dx%d", &w, &h) == 2 && w >= 320 && h >= 180) return NSMakeSize(w, h);
+    if (e) LOG("[RED] DM_WINDOW_SIZE=%s: <width>x<height> in points, from 320x180; the window opens at 1280x720", e);
+    return NSMakeSize(1280, 720);
+}
+// The shape the game renders at for a profile with screen_shape fill (DM_ASPECT auto; loader.c): the screen's in fullscreen (DM_FULLSCREEN), else the window's first size. The game takes
+// it once, at boot: a window resized later shows the picture at that shape with bars (the present fits it). No window: 0, the game's 16:9
+double front_screen_aspect(void) {
+    if (!getenv("DM_WINDOW")) return 0;
+    const char *fs = getenv("DM_FULLSCREEN");
+    if (fs && strcmp(fs, "0")) { NSScreen *sc = NSScreen.mainScreen; if (sc && sc.frame.size.height > 0) return sc.frame.size.width / sc.frame.size.height; }
+    NSSize z = window_size(); return z.width / z.height;
+}
 static _Atomic int g_screen_variable_refresh;
 int front_screen_variable_refresh(void) { return g_screen_variable_refresh; }
 static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabilities of the current screen and mode, including a mode change without moving the window
@@ -1183,13 +1198,13 @@ void front_run(void (*guest)(void)) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-        NSRect r = NSMakeRect(0, 0, 1280, 720);
+        NSSize ws = window_size(); NSRect r = NSMakeRect(0, 0, ws.width, ws.height);
         NSWindow *win = [[NSWindow alloc] initWithContentRect:r
                                                     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
                                                       backing:NSBackingStoreBuffered defer:NO];
         win.title = @DM_GAME_NAME;   // the game profile's name (game name label)
         // Fullscreen: without FullScreenPrimary the green button only zooms the window. The present path already scales
-        // the game picture to fit the drawable with black bars around it, so fullscreen keeps the game's aspect ratio.
+        // the game picture to fit the drawable with black bars around it, so fullscreen keeps the game's aspect ratio (the screen's, for a profile with screen_shape fill).
         win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
         NSView *v = win.contentView = [[DmGameView alloc] initWithFrame:r];
         v.wantsLayer = YES;

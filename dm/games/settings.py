@@ -42,6 +42,17 @@ def render_base(g):
     return {'docked': [int(m[1]), int(m[2])], 'handheld': [int(m[3]), int(m[4])]}
 
 
+def render_presets(g):
+    """The profile's render_presets ("<scale>=<name>,..."): named render scales the launcher offers as a choice in place of the slider, as [[scale, name], ...]; None when the profile has none.
+    The preset named Default is the row's default"""
+    v = g.get('render_presets', '')
+    if not v: return None
+    opts = [o.split('=', 1) for o in v.split(',')]
+    if any(len(o) != 2 or not re.fullmatch(r'(0\.\d+|1\.0)', o[0]) or not 0.25 <= float(o[0]) <= 1.0 or not o[1] for o in opts): sys.exit(f'{g.id}: render_presets is "<scale 0.25 to 1.0>=<name>,...": {v}')
+    if 'Default' not in [o[1] for o in opts]: sys.exit(f'{g.id}: render_presets names no Default: {v}')
+    return opts
+
+
 def rows():
     for n, line in enumerate((HERE / 'settings.tsv').read_text(encoding='utf-8').splitlines(), 1):
         if not line.strip() or line.startswith('#'): continue
@@ -94,7 +105,7 @@ def build(gid, patched, control):
         if kind == 'choice' and values != 'languages': return {v.split('=', 1)[0] for v in values.split(',')}
         return None
 
-    out, table, base = [], {r[1][0]: takes(r[1][1], r[1][2]) for r in rows()}, render_base(g)
+    out, table, base, presets = [], {r[1][0]: takes(r[1][1], r[1][2]) for r in rows()}, render_base(g), render_presets(g)
     for n, (var, kind, values, default, cond, section, label, note, extra) in rows():
         m = meta(extra, n)
         if 'needs' in m:
@@ -105,6 +116,9 @@ def build(gid, patched, control):
         if not shown(cond, n): continue
         s = {'env': var, 'kind': kind, 'section': section, 'label': label, 'note': note, 'default': value(default, n), **m}
         if var == 'DM_RENDER_SCALE' and base: s['base'] = base   # the render scale in pixels, for the console mode chosen
+        if var == 'DM_RENDER_SCALE' and presets:   # named render scales in place of the slider
+            s.update(kind='choice', label='Graphics preset', options=presets, default=next(o[0] for o in presets if o[1] == 'Default')); s.pop('base', None)
+            out.append(s); continue
         if kind == 'choice':
             opts = [list(l) for l in langs] if values == 'languages' else [v.split('=', 1) for v in values.split(',')]
             if any(len(o) != 2 for o in opts): sys.exit(f'settings.tsv:{n}: choice values are value=label,...')

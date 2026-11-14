@@ -77,6 +77,13 @@ int main(void) { @autoreleasepool {
     acquire_ticks(120, 1, 2, 1, "display 120 Hz ignores the game's interval");
     acquire_ticks(90, 1, 1, 4. / 3, "display 90 Hz preserves fractional ticks");
     acquire_ticks(75, 1, 1, 1.6, "display 75 Hz preserves fractional ticks");
+    acquire_ticks(45, 1, 2, 160. / 60, "a 45 fps cap takes 3, 3, 2 ticks of a 120 Hz link, whatever the game's interval");
+    acquire_ticks(40, 1, 2, 3, "a 40 fps cap takes 3 ticks of a 120 Hz link");
+    acquire_ticks(30, 1, 1, 4, "a 30 fps cap takes 4 ticks of a 120 Hz link");
+    g_link_mode = 1;
+    acquire_ticks(40, 1, 1, 1.5, "a 40 fps cap alternates 1 and 2 ticks of a 60 Hz link");
+    acquire_ticks(30, 1, 1, 2, "a 30 fps cap takes 2 ticks of a 60 Hz link");
+    g_link_mode = 2;
     acquire_ticks(120, 0, 2, 4, "game mode keeps interval 2 in 60 Hz vsyncs");
     acquire_ticks(60, 1, 2, 2, "display 60 Hz ignores the game's interval");
     acquire_ticks(240, 1, 1, 1, "a rate above the link's waits one tick");

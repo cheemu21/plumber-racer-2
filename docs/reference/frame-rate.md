@@ -195,6 +195,14 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Found on:** [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md): the slow area on an M1, frame time p50 66.7 → 50.2 ms at interval 3 (`DM_NVN_TSV` `@frame_ms`, `@itv`, `@link_gap_ms` 33.3 → 16.7).
 - **Check:** `t_nvn` (`interval 3: 60 Hz link`, `back to 2 from 3 waits a second again`).
 
+### A present rate between the link's ticks
+
+- **Symptom:** in `present_interval display`, a `DM_PRESENT_HZ` under 60 is not applied: the acquire waits one tick of a 60 Hz link per frame whatever the rate, and with Frame buffering on (`DM_PRESENT_SNAP`) no rate is applied at all, as the ring's free slot is all that paces the acquire.
+- **Cause:** `link_wait` converted a present rate to link ticks only above 60 Hz. 40 and 45 fps are not whole numbers of 60 Hz ticks either, and the snapshot path of the acquire did not call it.
+- **Fix:** `link_wait` takes any rate but 60 (`present_rate_set`, `hle_nvn.c`), the snapshot path waits for it too, and a rate that 60 does not divide, or above 60, takes a 120 Hz link where the screen has one (`present_cfg`): 40 fps is 3 ticks, 45 is 3, 3, 2. A 60 Hz screen keeps its link, where 40 fps alternates 1 and 2 ticks. `DM_PRESENT_LINK` still decides when set. The host only paces presents: the game must keep its own speed at that rate, which `frame_caps` in its profile states.
+- **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md#frame-rate).
+- **Check:** `t_link_ticks`: 45, 40 and 30 fps on a 120 Hz link, 40 and 30 on a 60 Hz one, through the real acquire.
+
 ### One frame per tick of a 120 Hz display link
 
 - **Symptom:** with `present_interval display`, `DM_PRESENT_HZ=120` and `DM_PRESENT_LINK=2` (a 120 Hz display link) a game stays at 60 fps although its frame takes 8 ms; the display link logs about two ticks per present. With a requested 90 Hz, truncating the tick conversion instead allows 120 fps (reproduced through the real acquire with simulated link ticks).

@@ -51,11 +51,16 @@ static UILabel *front_ios_fps_label(void);
     l.drawableSize = CGSizeMake(self.bounds.size.width * l.contentsScale, self.bounds.size.height * l.contentsScale);
 }
 @end
-static CGRect fit_16_9(CGRect b) {   // the largest centered 16:9 rectangle in b
-    CGFloat w = b.size.width, h = b.size.height;
-    if (w / h > 16.0 / 9.0) w = h * 16.0 / 9.0; else h = w * 9.0 / 16.0;
+// The game's picture shape: 16:9 as on the Switch, or the screen's for a profile with screen_shape fill (dm_screen_shape, set when the game starts; loader.c)
+static CGFloat game_shape(void) { return dm_screen_shape > 0 ? dm_screen_shape : 16.0 / 9.0; }
+static CGRect fit_16_9(CGRect b) {   // the largest centered rectangle of the game's shape in b (16:9 unless the game renders at the screen's shape)
+    CGFloat w = b.size.width, h = b.size.height, a = game_shape();
+    if (w / h > a) w = h * a; else h = w / a;
     return CGRectMake(floor((b.size.width - w) / 2), floor((b.size.height - h) / 2), w, h);
 }
+// The screen's shape, landscape (screen_shape fill's default, DM_ASPECT auto): taken on the main thread when the game view is made, read by the host thread when the game starts
+static _Atomic double g_screen_aspect;
+double front_screen_aspect(void) { return g_screen_aspect; }
 static void tv_attach(void);
 
 @interface DmRootVC : UIViewController
@@ -68,6 +73,7 @@ static void tv_attach(void);
 @end
 static DmRootVC *g_root;
 static void launcher_done(void) { [g_root startGame]; }
+void front_screen_shape_changed(void) { dispatch_async(dispatch_get_main_queue(), ^{ [g_root.view setNeedsLayout]; [g_root.pad setNeedsLayout]; }); }   // loader.c: the game's shape is set
 @implementation DmRootVC
 - (void)showHint:(NSString *)text {   // why the game cannot start, centered over the black screen
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectInset(self.view.bounds, 40, 40)];
@@ -99,6 +105,7 @@ static void launcher_done(void) { [g_root startGame]; }
     front_hud_env();   // before the process's first Metal device, which reads MTL_HUD_ENABLED (an env file's DM_METAL_HUD sets it in main.m already; GitHub issue #840)
     const char *dev = front_ios_device_check();   // that first device: a GPU without BC textures is refused here, not at launch, so the launcher's HUD switch counts
     if (dev) { [self showHint:[NSString stringWithFormat:@"This device is not supported.\n%s", dev]]; return; }   // the host does not start
+    { CGSize z = self.view.bounds.size; if (z.width > 0 && z.height > 0) g_screen_aspect = fmax(z.width, z.height) / fmin(z.width, z.height); }
     self.game =[[DmGameView alloc] initWithFrame:self.view.bounds];
     [self.view addSubview:self.game];
     g_layer = (CAMetalLayer *)self.game.layer;

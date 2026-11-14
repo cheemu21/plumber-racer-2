@@ -33,6 +33,18 @@ class LauncherSettingsTests(unittest.TestCase):
                 self.assertEqual((s['kind'], s['section'], s['default']), ('choice', 'Game', 'off'))
                 self.assertEqual(s['options'], [['off', 'Standard'], ['metalfx', 'MetalFX']])
 
+    def test_presets_and_frame_caps(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(settings.nacp, 'languages', return_value=['en-US']), patch.dict(os.environ, {'GFXAPI': 'nvn'}):
+            (Path(tmp) / 'main.fixups.tsv').write_text('# RENDER_SCALE\t1\n')
+            rows = {s['env']: s for s in settings.build('0400C3F00006E000', tmp, Path(tmp) / 'control.nacp')['settings']}
+        s = rows['DM_RENDER_SCALE']   # render_presets replaces the slider; the one named Default is the default
+        self.assertEqual((s['kind'], s['label'], s['default']), ('choice', 'Graphics preset', '0.75'))
+        self.assertEqual(s['options'], [['0.25', 'Ultra Potato'], ['0.5', 'Potato'], ['0.75', 'Default'], ['1.0', 'High']])
+        self.assertNotIn('min', s)
+        self.assertEqual([o[0] for o in rows['DM_PRESENT_HZ']['options']], ['30', '40', '45', '60'])
+        self.assertEqual(rows['DM_PRESENT_HZ']['default'], '60')
+        self.assertNotIn('DM_PRESENT_HZ', build(WONDER, 'nvn'))   # only with frame_caps on
+
     def test_frame_buffering_by_graphics_api(self):
         for api, gid in [('nvn', BOTW), ('vulkan', '0100535012974000'), ('gl', '010014E00DB56000'), ('', BOTW)]:
             with self.subTest(api=api):
